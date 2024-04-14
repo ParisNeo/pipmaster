@@ -1,21 +1,21 @@
-# pymanage
+# pipmaster
 
-[![GitHub stars](https://img.shields.io/github/stars/ParisNeo/pymanage.svg?style=social&label=Stars)](https://github.com/ParisNeo/pymanage)
-[![PyPI version](https://badge.fury.io/py/pymanage.svg)](https://badge.fury.io/py/pymanage)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/ParisNeo/pymanage/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/ParisNeo/pipmaster.svg?style=social&label=Stars)](https://github.com/ParisNeo/pipmaster)
+[![PyPI version](https://badge.fury.io/py/pipmaster.svg)](https://badge.fury.io/py/pipmaster)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/ParisNeo/pipmaster/blob/main/LICENSE)
 
 A simple and versatile Python package manager for automating installation and verification across platforms.
 
 ## Installation
 
 ```
-pip install pymanage
+pip install pipmaster
 ```
 
 ## Usage
 
 ```python
-from pymanage import PackageManager
+from pipmaster import PackageManager
 
 # Create a PackageManager instance
 pm = PackageManager()
@@ -34,7 +34,7 @@ print(package_info)
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request on the [GitHub repository](https://github.com/ParisNeo/pymanage).
+Contributions are welcome! Please open an issue or submit a pull request on the [GitHub repository](https://github.com/ParisNeo/pipmaster).
 
 ## Author
 
