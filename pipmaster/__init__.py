@@ -45,10 +45,8 @@ class PackageManager:
         """
         try:
             subprocess.run([self.package_manager, "install", package], check=True)
-            print(f"Successfully installed {package}. Abra-cadabra!")
             return True
         except subprocess.CalledProcessError as e:
-            print(f"Error installing {package}: {e}. Oopsie daisy!")
             return False
 
     def install_version(self, package, version):
@@ -64,10 +62,8 @@ class PackageManager:
         """
         try:
             subprocess.run([self.package_manager, "install", f"{package}=={version}"], check=True)
-            print(f"Successfully installed {package} version {version}. It's like hitting the jackpot!")
             return True
         except subprocess.CalledProcessError as e:
-            print(f"Error installing {package} version {version}: {e}. The version fairy is on strike!")
             return False
 
     def is_installed(self, package):
@@ -82,10 +78,8 @@ class PackageManager:
         """
         try:
             subprocess.run([self.package_manager, "show", package], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print(f"{package} is already installed. It's like finding a unicorn in your backyard!")
             return True
         except subprocess.CalledProcessError:
-            print(f"{package} is not installed. It's as elusive as Bigfoot!")
             return False
 
     def get_package_info(self, package):
@@ -100,10 +94,8 @@ class PackageManager:
         """
         try:
             output = subprocess.check_output([self.package_manager, "show", package], universal_newlines=True)
-            print(f"Here's the scoop on {package}:")
             return output
         except subprocess.CalledProcessError as e:
-            print(f"Error getting information for {package}: {e}. Looks like the cat's got the info!")
             return None
 
     def get_installed_version(self, package):
@@ -121,11 +113,9 @@ class PackageManager:
             for line in output.splitlines():
                 if line.startswith("Version:"):
                     version = line.split(":", 1)[1].strip()
-                    print(f"The installed version of {package} is {version}. It's like finding out your favorite ice cream flavor!")
                     return version
             return None
         except subprocess.CalledProcessError as e:
-            print(f"Error getting version for {package}: {e}. The version is playing hide and seek!")
             return None
 
     def install_or_update(self, package):
@@ -145,13 +135,11 @@ class PackageManager:
                 print(f"Updating {package} from version {installed_version}. It's like a software spa day!")
                 try:
                     subprocess.run([self.package_manager, "install", "--upgrade", package], check=True)
-                    print(f"Successfully updated {package}. New version, who dis?")
                     return True
                 except subprocess.CalledProcessError as e:
                     print(f"Error updating {package}: {e}. The update fairy took a day off!")
                     return False
         else:
-            print(f"{package} is not installed. Time to add it to your collection!")
             return self.install(package)
 
 if __name__ == "__main__":
