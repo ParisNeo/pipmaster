@@ -58,17 +58,16 @@ pm.install_or_update("requests")
 
 When using pipmaster, it's crucial to understand the difference between the module name used for importing and the package name used for installation. These names can sometimes differ:
 
-- For `pm.is_installed()`, use the name you would use in an import statement.
-- For `pm.install()`, use the name you would use with pip install.
 
 Example:
+if you need to import googlesearch, the name of the library is actually googlesearch-python. So make sure you use PackageManager with googlesearch-python and not googlesearch
 ```python
 from pipmaster import PackageManager
 
 pm = PackageManager()
 
 # Check if the module can be imported
-if not pm.is_installed("googlesearch"):
+if not pm.is_installed("googlesearch-python"):
     # Install the package using its pip install name
     pm.install("googlesearch-python")
 ```
