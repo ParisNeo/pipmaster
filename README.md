@@ -54,6 +54,31 @@ print(f"Installed version: {version}")
 # Install or update a package
 pm.install_or_update("requests")
 ```
+## Important Note on Package Names
+
+When using pipmaster, it's crucial to understand the difference between the module name used for importing and the package name used for installation. These names can sometimes differ:
+
+- For `pm.is_installed()`, use the name you would use in an import statement.
+- For `pm.install()`, use the name you would use with pip install.
+
+Example:
+```python
+from pipmaster import PackageManager
+
+pm = PackageManager()
+
+# Check if the module can be imported
+if not pm.is_installed("googlesearch"):
+    # Install the package using its pip install name
+    pm.install("googlesearch-python")
+```
+
+In this case, "googlesearch" is the module name used for importing, while "googlesearch-python" is the package name used for installation with pip.
+
+Always verify the correct module and package names for the libraries you're working with to ensure proper functionality.
+```
+
+This note explains the difference between the module name and package name, provides a clear example, and advises users to verify the correct names for the libraries they're using. It should help prevent confusion and ensure that users of pipmaster use the correct names for both checking installation status and installing packages.
 
 ### 📚 Documentation
 
