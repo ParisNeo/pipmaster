@@ -75,7 +75,6 @@ if not pm.is_installed("googlesearch-python"):
 In this case, "googlesearch" is the module name used for importing, while "googlesearch-python" is the package name used for installation with pip.
 
 Always verify the correct module and package names for the libraries you're working with to ensure proper functionality.
-```
 
 This note explains the difference between the module name and package name, provides a clear example, and advises users to verify the correct names for the libraries they're using. It should help prevent confusion and ensure that users of pipmaster use the correct names for both checking installation status and installing packages.
 
