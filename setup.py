@@ -8,13 +8,13 @@ with open('requirements.txt', 'r') as f:
 
 setup(
     name="pipmaster",
-    version="0.1.5",
+    version="0.1.7",
     author="ParisNeo",
     author_email="parisneoai@gmail.com",
     description="A simple and versatile Python package manager for automating installation and verification across platforms.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/ParisNeo/pymanage",
+    url="https://github.com/ParisNeo/pipmaster",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
