@@ -225,13 +225,13 @@ _pm = PackageManager()
 
 # Create module-level functions that use the _pm instance
 def install(package, index_url=None, force_reinstall=False):
-    return _pm.install(package, force_reinstall, index_url)
+    return _pm.install(package, index_url, force_reinstall)
 
 def install_multiple(packages, index_url=None, force_reinstall=False):
     return _pm.install_multiple(packages, index_url, force_reinstall)
 
 def install_version(package, version, index_url=None, force_reinstall=False):
-    return _pm.install_version(package, version, force_reinstall, index_url)
+    return _pm.install_version(package, version, index_url, force_reinstall)
 
 def is_installed(package):
     return _pm.is_installed(package)
