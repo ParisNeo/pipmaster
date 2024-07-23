@@ -4,7 +4,7 @@ class PackageManager:
     def __init__(self, package_manager="pip"):
         self.package_manager = package_manager
 
-    def install(self, package, index_url=None, force_reinstall=False):
+    def install(self, package, index_url=None, force_reinstall=False, upgrade=True):
         """
         Install a Python package using the specified package manager.
 
@@ -20,6 +20,8 @@ class PackageManager:
         command.append(package)
         if force_reinstall:
             command.append("--force-reinstall")
+        if upgrade:
+            command.append("--upgrade")
         if index_url:
             command.extend(["--index-url", index_url])
 
@@ -224,8 +226,8 @@ class PackageManager:
 _pm = PackageManager()
 
 # Create module-level functions that use the _pm instance
-def install(package, index_url=None, force_reinstall=False):
-    return _pm.install(package, index_url, force_reinstall)
+def install(package, index_url=None, force_reinstall=False, upgrade=True):
+    return _pm.install(package, index_url, force_reinstall, upgrade)
 
 def install_multiple(packages, index_url=None, force_reinstall=False):
     return _pm.install_multiple(packages, index_url, force_reinstall)
@@ -271,8 +273,7 @@ if __name__ == "__main__":
     results = pm.install_multiple(packages, force_reinstall=True, index_url=index_url)
 
     # Print the results
-    for package, success in results.items():
-        if success:
-            print(f"Successfully installed {package}.")
-        else:
-            print(f"Failed to install {package}.")
+    if results:
+        print(f"Successfully installed {packages}.")
+    else:
+        print(f"Failed to install {packages}.")
