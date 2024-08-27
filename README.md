@@ -48,6 +48,7 @@ import pipmaster as pm
 import pkg_resources
 # Check and install required packages
 required_packages = [
+    // Package, min version, index
     ["torch","","https://download.pytorch.org/whl/cu121"],
     ["diffusers","0.30.1",None],
     ["transformers","4.44.2",None],
