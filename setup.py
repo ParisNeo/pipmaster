@@ -8,7 +8,7 @@ with open('requirements.txt', 'r') as f:
 
 setup(
     name="pipmaster",
-    version="0.2.4",
+    version="0.3.1",
     author="ParisNeo",
     author_email="parisneoai@gmail.com",
     description="A simple and versatile Python package manager for automating installation and verification across platforms.",

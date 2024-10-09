@@ -1,7 +1,8 @@
 import subprocess
+import sys
 from ascii_colors import ASCIIColors
 class PackageManager:
-    def __init__(self, package_manager="pip"):
+    def __init__(self, package_manager=f'"{sys.executable}" -m pip'):
         self.package_manager = package_manager
 
     def install(self, package, index_url=None, force_reinstall=False, upgrade=True):
@@ -16,7 +17,7 @@ class PackageManager:
         Returns:
             bool: True if the package was installed successfully, False otherwise.
         """
-        command = [self.package_manager, "install"]
+        command = self.package_manager.split()+["install"]
         command.append(package)
         if force_reinstall:
             command.append("--force-reinstall")
@@ -44,7 +45,7 @@ class PackageManager:
         Returns:
             dict: A dictionary with package names as keys and installation success as values.
         """
-        command = [self.package_manager, "install"]
+        command = self.package_manager.split()+["install"]
         command += packages
         if force_reinstall:
             command.append("--force-reinstall")
@@ -71,7 +72,7 @@ class PackageManager:
         Returns:
             bool: True if the package was installed successfully, False otherwise.
         """
-        command = [self.package_manager, "install"]
+        command = self.package_manager.split()+["install"]
         if force_reinstall:
             command.append("--force-reinstall")
         if index_url:
@@ -95,7 +96,7 @@ class PackageManager:
             bool: True if the package is installed, False otherwise.
         """
         try:
-            subprocess.run([self.package_manager, "show", package], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(self.package_manager.split()+["show", package], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return True
         except subprocess.CalledProcessError:
             return False
@@ -111,7 +112,7 @@ class PackageManager:
             str: The output of the package manager's show command, containing package information.
         """
         try:
-            output = subprocess.check_output([self.package_manager, "show", package], universal_newlines=True)
+            output = subprocess.check_output(self.package_manager.split()+["show", package], universal_newlines=True)
             return output
         except subprocess.CalledProcessError as e:
             return None
@@ -127,7 +128,7 @@ class PackageManager:
             str: The installed version of the package, or None if the package is not installed.
         """
         try:
-            output = subprocess.check_output([self.package_manager, "show", package], universal_newlines=True)
+            output = subprocess.check_output(self.package_manager.split()+["show", package], universal_newlines=True)
             for line in output.splitlines():
                 if line.startswith("Version:"):
                     version = line.split(":", 1)[1].strip()
@@ -171,7 +172,7 @@ class PackageManager:
         Returns:
             bool: True if the package was uninstalled successfully, False otherwise.
         """
-        command = [self.package_manager, "uninstall", "-y", package]
+        command = self.package_manager.split()+["uninstall", "-y", package]
         try:
             subprocess.run(command, check=True)
             return True
@@ -187,7 +188,7 @@ class PackageManager:
         Returns:
             bool: True if the package was uninstalled successfully, False otherwise.
         """
-        command = [self.package_manager, "uninstall", "-y"] + packages
+        command = self.package_manager.split()+["uninstall", "-y"] + packages
         try:
             subprocess.run(command, check=True)
             return True
@@ -207,7 +208,7 @@ class PackageManager:
         Returns:
             dict: A dictionary with package names as keys and installation/update success as values.
         """
-        command = [self.package_manager, "install"]
+        command = self.package_manager.split()+["install"]
         command += packages
         if force_reinstall:
             command.append("--force-reinstall")
