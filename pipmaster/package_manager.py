@@ -1,226 +1,82 @@
 import subprocess
 import sys
 from ascii_colors import ASCIIColors
+import pkg_resources
 class PackageManager:
-    def __init__(self, package_manager=f'"{sys.executable}" -m pip'):
+    def __init__(self, package_manager=None):
+        if package_manager is None:
+            package_manager = f'"{sys.executable}" -m pip'
         self.package_manager = package_manager
 
+    def _run_pip_command(self, command):
+        """
+        Run a pip command and return the output.
+        """
+        try:
+            result = subprocess.run(self.package_manager.split() + command, 
+                                    check=True, capture_output=True, text=True)
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            print(f"Error running pip command: {e}")
+            return None
+
     def install(self, package, index_url=None, force_reinstall=False, upgrade=True):
-        """
-        Install a Python package using the specified package manager.
-
-        Args:
-            package (str): The name of the package to install.
-            force_reinstall (bool): Whether to force reinstall the package.
-            index_url (str): Optional URL of the package index to use.
-
-        Returns:
-            bool: True if the package was installed successfully, False otherwise.
-        """
-        command = self.package_manager.split()+["install"]
-        command.append(package)
+        command = ["install", package]
         if force_reinstall:
             command.append("--force-reinstall")
         if upgrade:
             command.append("--upgrade")
         if index_url:
             command.extend(["--index-url", index_url])
-
-        try:
-            ASCIIColors.multicolor(["Install command :", command], [ASCIIColors.color_red, ASCIIColors.color_yellow])
-            subprocess.run(command, check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            return False
+        return self._run_pip_command(command) is not None
 
     def install_multiple(self, packages, index_url=None, force_reinstall=False):
-        """
-        Install multiple Python packages.
-
-        Args:
-            packages (list): A list of package names to install.
-            force_reinstall (bool): Whether to force reinstall the packages.
-            index_url (str): Optional URL of the package index to use.
-
-        Returns:
-            dict: A dictionary with package names as keys and installation success as values.
-        """
-        command = self.package_manager.split()+["install"]
-        command += packages
+        command = ["install"] + packages
         if force_reinstall:
             command.append("--force-reinstall")
         if index_url:
             command.extend(["--index-url", index_url])
+        return self._run_pip_command(command) is not None
 
-        try:
-            ASCIIColors.multicolor(["Install command :", command], [ASCIIColors.color_red, ASCIIColors.color_yellow])
-            subprocess.run(command, check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            return False
-        
     def install_version(self, package, version, index_url=None, force_reinstall=False):
-        """
-        Install a specific version of a Python package using the specified package manager.
-
-        Args:
-            package (str): The name of the package to install.
-            version (str): The version of the package to install.
-            force_reinstall (bool): Whether to force reinstall the package.
-            index_url (str): Optional URL of the package index to use.
-
-        Returns:
-            bool: True if the package was installed successfully, False otherwise.
-        """
-        command = self.package_manager.split()+["install"]
+        command = ["install", f"{package}=={version}"]
         if force_reinstall:
             command.append("--force-reinstall")
         if index_url:
             command.extend(["--index-url", index_url])
-        command.append(f"{package}=={version}")
-
-        try:
-            subprocess.run(command, check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            return False
+        return self._run_pip_command(command) is not None
 
     def is_installed(self, package):
-        """
-        Check if a Python package is installed.
-
-        Args:
-            package (str): The name of the package to check.
-
-        Returns:
-            bool: True if the package is installed, False otherwise.
-        """
         try:
-            subprocess.run(self.package_manager.split()+["show", package], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            pkg_resources.get_distribution(package)
             return True
-        except subprocess.CalledProcessError:
+        except pkg_resources.DistributionNotFound:
             return False
 
     def get_package_info(self, package):
-        """
-        Get information about an installed Python package.
-
-        Args:
-            package (str): The name of the package to get information for.
-
-        Returns:
-            str: The output of the package manager's show command, containing package information.
-        """
-        try:
-            output = subprocess.check_output(self.package_manager.split()+["show", package], universal_newlines=True)
-            return output
-        except subprocess.CalledProcessError as e:
-            return None
+        return self._run_pip_command(["show", package])
 
     def get_installed_version(self, package):
-        """
-        Get the installed version of a Python package.
-
-        Args:
-            package (str): The name of the package to check.
-
-        Returns:
-            str: The installed version of the package, or None if the package is not installed.
-        """
         try:
-            output = subprocess.check_output(self.package_manager.split()+["show", package], universal_newlines=True)
-            for line in output.splitlines():
-                if line.startswith("Version:"):
-                    version = line.split(":", 1)[1].strip()
-                    return version
-            return None
-        except subprocess.CalledProcessError as e:
+            return pkg_resources.get_distribution(package).version
+        except pkg_resources.DistributionNotFound:
             return None
 
     def install_or_update(self, package, index_url=None, force_reinstall=False):
-        """
-        Install or update a Python package.
-
-        Args:
-            package (str): The name of the package to install or update.
-            index_url (str): Optional URL of the package index to use.
-
-        Returns:
-            bool: True if the package was installed or updated successfully, False otherwise.
-        """        
         if self.is_installed(package):
-            print(f"{package} is already installed. Let's see if it needs a makeover!")
-            installed_version = self.get_installed_version(package)
-            if installed_version:
-                print(f"Updating {package} from version {installed_version}. It's like a software spa day!")
-                try:
-                    self.install(package, index_url, force_reinstall=True)
-                    return True
-                except subprocess.CalledProcessError as e:
-                    print(f"Error updating {package}: {e}. The update fairy took a day off!")
-                    return False
+            print(f"{package} is already installed. Updating if necessary.")
+            return self.install(package, index_url, force_reinstall=True, upgrade=True)
         else:
             return self.install(package, index_url, force_reinstall)
 
     def uninstall(self, package):
-        """
-        Uninstall a Python package.
+        return self._run_pip_command(["uninstall", "-y", package]) is not None
 
-        Args:
-            package (str): The name of the package to uninstall.
-
-        Returns:
-            bool: True if the package was uninstalled successfully, False otherwise.
-        """
-        command = self.package_manager.split()+["uninstall", "-y", package]
-        try:
-            subprocess.run(command, check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            return False
-    def uninstall_multiple(self, packages:list):
-        """
-        Uninstall a Python package.
-
-        Args:
-            package (str): The name of the package to uninstall.
-
-        Returns:
-            bool: True if the package was uninstalled successfully, False otherwise.
-        """
-        command = self.package_manager.split()+["uninstall", "-y"] + packages
-        try:
-            subprocess.run(command, check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            return False
-
+    def uninstall_multiple(self, packages):
+        return self._run_pip_command(["uninstall", "-y"] + packages) is not None
 
     def install_or_update_multiple(self, packages, index_url=None, force_reinstall=False):
-        """
-        Install or update multiple Python packages.
-
-        Args:
-            packages (list): A list of package names to install or update.
-            index_url (str): Optional URL of the package index to use.
-            force_reinstall (bool): Whether to force reinstall the packages.
-
-        Returns:
-            dict: A dictionary with package names as keys and installation/update success as values.
-        """
-        command = self.package_manager.split()+["install"]
-        command += packages
-        if force_reinstall:
-            command.append("--force-reinstall")
-        if index_url:
-            command.extend(["--index-url", index_url])
-
-        try:
-            ASCIIColors.multicolor(["Install command :", command], [ASCIIColors.color_red, ASCIIColors.color_yellow])
-            subprocess.run(command, check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            return False
+        return self.install_multiple(packages, index_url, force_reinstall)
     
     
 # Create a single instance of PackageManager
