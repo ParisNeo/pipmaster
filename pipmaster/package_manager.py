@@ -2,6 +2,7 @@ import subprocess
 import sys
 from ascii_colors import ASCIIColors
 import pkg_resources
+import os 
 class PackageManager:
     def __init__(self, package_manager=None):
         if package_manager is None:
@@ -13,9 +14,8 @@ class PackageManager:
         Run a pip command and return the output.
         """
         try:
-            result = subprocess.run(self.package_manager.split() + command, 
-                                    check=True, capture_output=True, text=True)
-            return result.stdout
+            full_command = self.package_manager.split() + command
+            return os.system(" ".join(full_command))
         except subprocess.CalledProcessError as e:
             print(f"Error running pip command: {e}")
             return None
@@ -28,6 +28,40 @@ class PackageManager:
             command.append("--upgrade")
         if index_url:
             command.extend(["--index-url", index_url])
+        return self._run_pip_command(command) is not None
+
+    def install_edit(self, path, index_url=None):
+        """
+        Install a package in editable mode.
+        
+        Args:
+        path (str): Path to the package directory
+        index_url (str, optional): Custom PyPI index URL
+        
+        Returns:
+        bool: True if installation was successful, False otherwise
+        """
+        command = ["install", "-e", path]
+        if index_url:
+            command.extend(["--index-url", index_url])
+        
+        return self._run_pip_command(command) is not None
+
+    def install_requirements(self, requirements_file, index_url=None):
+        """
+        Install packages from a requirements file.
+        
+        Args:
+        requirements_file (str): Path to the requirements file
+        index_url (str, optional): Custom PyPI index URL
+        
+        Returns:
+        bool: True if installation was successful, False otherwise
+        """
+        command = ["install", "-r", requirements_file]
+        if index_url:
+            command.extend(["--index-url", index_url])
+        
         return self._run_pip_command(command) is not None
 
     def install_multiple(self, packages, index_url=None, force_reinstall=False):
@@ -85,6 +119,13 @@ _pm = PackageManager()
 # Create module-level functions that use the _pm instance
 def install(package, index_url=None, force_reinstall=False, upgrade=True):
     return _pm.install(package, index_url, force_reinstall, upgrade)
+
+def install_edit(path, index_url=None):
+    return _pm.install_edit(path, index_url)
+
+def install_requirements(path, index_url=None):
+    return _pm.install_requirements(path, index_url)
+
 
 def install_multiple(packages, index_url=None, force_reinstall=False):
     return _pm.install_multiple(packages, index_url, force_reinstall)
