@@ -3,6 +3,7 @@ import sys
 from ascii_colors import ASCIIColors
 import pkg_resources
 import os 
+import importlib
 class PackageManager:
     def __init__(self, package_manager=None):
         if package_manager is None:
@@ -29,6 +30,47 @@ class PackageManager:
         if index_url:
             command.extend(["--index-url", index_url])
         return self._run_pip_command(command) is not None
+
+    def install_if_missing(self, package, version=None, enforce_version=False, always_update=False, index_url=None):
+        """
+        Install a package if missing or if conditions require it.
+        
+        Args:
+            package (str): Name of the package to install (e.g., "numpy").
+            version (str, optional): Specific version to enforce (e.g., "1.26.4").
+            enforce_version (bool): If True, ensure the exact version is installed.
+            always_update (bool): If True, always update to the latest version.
+            index_url (str, optional): Custom index URL for pip.
+        
+        Returns:
+            bool: True if installation was successful or not needed, False otherwise.
+        """
+        pkg_name = package.split("==")[0]  # Strip version if provided in package string
+
+        # Check if the package is installed
+        installed = self.is_installed(pkg_name)
+
+        if installed:
+            if always_update:
+                print(f"Updating {pkg_name} to the latest version...")
+                return self.install(pkg_name, index_url=index_url, upgrade=True, force_reinstall=False)
+
+            if enforce_version and version:
+                installed_version = pkg_resources.get_distribution(pkg_name).version
+                if installed_version != version:
+                    print(f"{pkg_name} version {installed_version} found, but {version} required. Reinstalling...")
+                    return self.install(f"{pkg_name}=={version}", index_url=index_url, force_reinstall=True)
+                else:
+                    print(f"{pkg_name} version {version} is already installed.")
+                    return True
+
+            print(f"{pkg_name} is already installed and meets requirements.")
+            return True
+        else:
+            # Package is missing, install it
+            print(f"{pkg_name} not found. Installing...")
+            install_pkg = f"{pkg_name}=={version}" if version and enforce_version else pkg_name
+            return self.install(install_pkg, index_url=index_url, upgrade=always_update, force_reinstall=False)
 
     def install_edit(self, path, index_url=None):
         """
@@ -119,6 +161,10 @@ _pm = PackageManager()
 # Create module-level functions that use the _pm instance
 def install(package, index_url=None, force_reinstall=False, upgrade=True):
     return _pm.install(package, index_url, force_reinstall, upgrade)
+
+def install_if_missing(package, version=None, enforce_version=False, always_update=False, index_url=None):
+    return _pm.install_if_missing(package, version=None, enforce_version=False, always_update=False, index_url=None)
+
 
 def install_edit(path, index_url=None):
     return _pm.install_edit(path, index_url)

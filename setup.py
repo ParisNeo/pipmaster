@@ -8,7 +8,7 @@ with open('requirements.txt', 'r') as f:
 
 setup(
     name="pipmaster",
-    version="0.4.0",
+    version="0.5.0",
     author="ParisNeo",
     author_email="parisneoai@gmail.com",
     description="A simple and versatile Python package manager for automating installation and verification across platforms.",
@@ -26,6 +26,7 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
     python_requires=">=3.7",
     install_requires=install_requires,
