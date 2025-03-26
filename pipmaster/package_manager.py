@@ -128,7 +128,28 @@ class PackageManager:
             return True
         except pkg_resources.DistributionNotFound:
             return False
+    def is_version_higher(self, package, required_version):
+        """
+        Check if the installed version of a package is higher than the specified version.
+        Returns False if package is not installed.
+        """
+        try:
+            installed_version = pkg_resources.get_distribution(package).version
+            return pkg_resources.parse_version(installed_version) >= pkg_resources.parse_version(required_version)
+        except pkg_resources.DistributionNotFound:
+            return False
 
+    def is_version_exact(self, package, required_version):
+        """
+        Check if the installed version of a package matches exactly the specified version.
+        Returns False if package is not installed.
+        """
+        try:
+            installed_version = pkg_resources.get_distribution(package).version
+            return pkg_resources.parse_version(installed_version) == pkg_resources.parse_version(required_version)
+        except pkg_resources.DistributionNotFound:
+            return False
+        
     def get_package_info(self, package):
         return self._run_pip_command(["show", package])
 
@@ -181,6 +202,13 @@ def install_version(package, version, index_url=None, force_reinstall=False):
 
 def is_installed(package):
     return _pm.is_installed(package)
+
+def is_version_higher(package, required_version):
+    return _pm.is_version_higher(package, required_version)
+
+def is_version_exact(package, required_version):
+    return _pm.is_version_exact(package, required_version)
+
 
 def get_package_info(package):
     return _pm.get_package_info(package)
