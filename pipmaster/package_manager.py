@@ -239,7 +239,7 @@ if __name__ == "__main__":
     ]
     
     # Specify the index URL for PyTorch packages
-    index_url = "https://download.pytorch.org/whl/cu121"
+    index_url = "https://download.pytorch.org/whl/cu124"
 
     # Install the packages
     results = pm.install_multiple(packages, force_reinstall=True, index_url=index_url)
