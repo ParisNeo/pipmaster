@@ -10,6 +10,8 @@
 
 `pipmaster` is a versatile Python library designed to simplify and automate Python package management tasks directly from your code. It provides a robust, programmatic interface to `pip`, allowing you to install, update, check, and uninstall packages, manage requirements, target different Python environments, perform vulnerability checks, and more, with both synchronous and asynchronous interfaces.
 
+**View the full documentation at [parisneo.github.io/pipmaster/](https://parisneo.github.io/pipmaster/).**
+
 ## Why pipmaster?
 
 *   **Programmatic Control:** Manage packages within your scripts, setup routines, or automation tasks.
