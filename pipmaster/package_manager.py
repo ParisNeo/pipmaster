@@ -660,7 +660,7 @@ class PackageManager:
             return True
 
         packages_to_process: List[str] = []
-        console.print("--- Ensuring Package Requirements ---")
+        logger.info("--- Ensuring Package Requirements ---")
 
         for package, specifier in requirements.items():
             specifier_str = f" (requires '{specifier}')" if specifier else ""
@@ -695,16 +695,16 @@ class PackageManager:
 
 
         if not packages_to_process:
-            console.print("[success]All specified package requirements are already met.[/success]")
+            logger.info("[success]All specified package requirements are already met.[/success]")
             return True
 
         # If we need to install/update packages
         package_list_str = "', '".join(packages_to_process)
-        console.print(f"Found {len(packages_to_process)} packages requiring installation/update: '[magenta]{package_list_str}[/magenta]'")
+        logger.info(f"Found {len(packages_to_process)} packages requiring installation/update: '[magenta]{package_list_str}[/magenta]'")
         if dry_run:
-             console.print("[info]Dry run enabled. Simulating installation...[/info]")
+             logger.info("[info]Dry run enabled. Simulating installation...[/info]")
         else:
-             console.print("Running installation/update command...")
+             logger.info("Running installation/update command...")
 
         # Use install_multiple to handle the batch installation efficiently
         # Pass upgrade=True to ensure packages needing version change are handled
