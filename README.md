@@ -316,6 +316,47 @@ default_pm.install("rich")
 # custom_pm = PackageManager(pip_command_base=["/path/to/custom/pip", "--no-cache-dir"])
 # custom_pm.install("somepackage")
 ```
+### 7. Ensuring Multiple Package Requirements (`ensure_packages`)
+
+For managing a set of required packages with specific versions efficiently, use `ensure_packages`. It checks all requirements and performs a single installation/update command for only those packages that need it.
+
+```python
+# Define your project's requirements
+my_requirements = {
+    "requests": ">=2.25.0,<3.0.0",
+    "pandas": ">=1.3.0",
+    "numpy": None, # Install latest if missing, otherwise accept any version
+    "torch": "==1.13.1" # Example: exact version
+}
+
+print("\n--- Ensuring Project Requirements ---")
+# This will check all packages and install/update if needed
+success = pm.ensure_packages(my_requirements)
+
+if success:
+    print("All project requirements are met.")
+else:
+    print("Failed to ensure all project requirements.")
+
+# You can also use it with index_url, extra_args, dry_run
+# pm.ensure_packages(
+#     my_requirements,
+#     index_url="https://custom-index.com",
+#     extra_args=["--no-cache-dir"],
+#     dry_run=True
+# )
+print("-----------------------------------\n")
+```
+
+**How it Works:**
+
+1.  It takes the `requirements` dictionary.
+2.  It iterates through each `package`, `specifier` pair.
+3.  It uses `self.is_installed(package, version_specifier=specifier)` to check if the current state meets the requirement.
+4.  If a requirement is *not* met, it formats the package string (e.g., `"package>=1.2.3"` or just `"package"`) and adds it to a list `packages_to_process`.
+5.  If `packages_to_process` is not empty after checking all requirements, it calls `self.install_multiple(packages=packages_to_process, upgrade=True, ...)` once to handle all necessary installations/updates efficiently.
+6.  It returns `True` if everything was okay initially or the `install_multiple` call succeeded, `False` otherwise.
+
 
 ## Command-Line Interface (CLI)
 

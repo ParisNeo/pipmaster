@@ -627,6 +627,106 @@ class PackageManager:
             logger.exception(f"Failed to run pip-audit: {e}")
             return True, f"Error running pip-audit: {e}" # Assume vulnerable on error
 
+    def ensure_packages(
+        self,
+        requirements: Dict[str, Optional[str]],
+        index_url: Optional[str] = None,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+    ) -> bool:
+        """
+        Ensures that all specified packages are installed and meet version requirements.
+
+        Checks each package and its optional version specifier. If a package
+        is missing or doesn't meet the specifier, it's added to a list.
+        Finally, a single 'pip install' command is run to install/update all
+        necessary packages efficiently.
+
+        Args:
+            requirements (Dict[str, Optional[str]]): A dictionary where keys are
+                package names and values are optional PEP 440 version specifiers
+                (e.g., {"requests": ">=2.25", "numpy": None, "torch": "==1.10.0"}).
+                Use None or "" if no specific version is required.
+            index_url (str, optional): Custom index URL to use for installations.
+            extra_args (List[str], optional): Additional arguments for the pip install command.
+            dry_run (bool): If True, simulate the installation command without making changes.
+
+        Returns:
+            bool: True if all requirements were met initially or successfully
+                  installed/updated, False if any installation failed.
+        """
+        if not requirements:
+            logger.info("ensure_packages called with empty requirements dictionary.")
+            return True
+
+        packages_to_process: List[str] = []
+        console.print("--- Ensuring Package Requirements ---")
+
+        for package, specifier in requirements.items():
+            specifier_str = f" (requires '{specifier}')" if specifier else ""
+            logger.info(f"Checking requirement: '{package}'{specifier_str}")
+
+            try:
+                # Check if currently installed version meets the requirement
+                if self.is_installed(package, version_specifier=specifier):
+                    logger.info(f"Requirement met for '{package}'{specifier_str}.")
+                else:
+                    installed_version = self.get_installed_version(package)
+                    if installed_version:
+                         logger.warning(
+                             f"Requirement NOT met for '{package}'. Installed: {installed_version}, Required: '{specifier}'. Adding to update list."
+                         )
+                    else:
+                         logger.warning(
+                             f"Requirement NOT met for '{package}'. Package not installed. Adding to install list."
+                         )
+                    # Add package string with specifier for the install command
+                    # Pip handles "package>=x.y" format correctly
+                    package_string = f"{package}{specifier or ''}"
+                    packages_to_process.append(package_string)
+
+            except Exception as e:
+                 # Catch potential errors during checks, though is_installed should handle most
+                 logger.error(f"Error checking requirement for '{package}': {e}")
+                 # Treat check error as needing processing? Or return False?
+                 # Let's try adding it to process list for install attempt.
+                 package_string = f"{package}{specifier or ''}"
+                 packages_to_process.append(package_string)
+
+
+        if not packages_to_process:
+            console.print("[success]All specified package requirements are already met.[/success]")
+            return True
+
+        # If we need to install/update packages
+        package_list_str = "', '".join(packages_to_process)
+        console.print(f"Found {len(packages_to_process)} packages requiring installation/update: '[magenta]{package_list_str}[/magenta]'")
+        if dry_run:
+             console.print("[info]Dry run enabled. Simulating installation...[/info]")
+        else:
+             console.print("Running installation/update command...")
+
+        # Use install_multiple to handle the batch installation efficiently
+        # Pass upgrade=True to ensure packages needing version change are handled
+        success = self.install_multiple(
+            packages=packages_to_process,
+            index_url=index_url,
+            force_reinstall=False, # Generally not needed unless specific issues arise
+            upgrade=True, # Important to handle version updates
+            extra_args=extra_args,
+            dry_run=dry_run,
+        )
+
+        if dry_run and success:
+            logger.info(f"[info]Dry run successful for processing requirements. No changes were made.[/info]")
+        elif success:
+            logger.info("[success]Successfully processed all required package installations/updates.[/success]")
+             # Optional: Re-verify after install? Could add extra checks here if needed.
+        else:
+            logger.info("[error]Failed to install/update one or more required packages.[/error]")
+            return False
+
+        return True # Return True if install_multiple succeeded
 
 # --- Module-level Convenience Functions (using default PackageManager) ---
 
@@ -1078,6 +1178,37 @@ def is_version_exact(package_name: str, required_version: str) -> bool:
     logger.warning("is_version_exact is deprecated. Use is_version_compatible instead.")
     return _default_pm.is_version_compatible(package_name, f"=={required_version}")
 
+def ensure_packages(
+    requirements: Dict[str, Optional[str]],
+    index_url: Optional[str] = None,
+    extra_args: Optional[List[str]] = None,
+    dry_run: bool = False,
+) -> bool:
+    """
+    Ensures packages meet requirements in the current environment using the default PackageManager.
+
+    Checks each package and its optional version specifier from the requirements
+    dictionary. Installs or updates packages efficiently in a single batch if needed.
+
+    Args:
+        requirements (Dict[str, Optional[str]]): Dictionary of package names to
+            optional version specifiers (e.g., {"requests": ">=2.25", "numpy": None}).
+        index_url (str, optional): Custom index URL for installations.
+        extra_args (List[str], optional): Additional arguments for the pip install command.
+        dry_run (bool): If True, simulate installations without making changes.
+
+    Returns:
+        bool: True if all requirements were met initially or successfully resolved,
+              False if any installation failed.
+
+    (Delegates to PackageManager.ensure_packages)
+    """
+    return _default_pm.ensure_packages(
+        requirements=requirements,
+        index_url=index_url,
+        extra_args=extra_args,
+        dry_run=dry_run,
+    )
 
 # --- UV / Conda Placeholders ---
 # These would be implemented similarly to PackageManager but with different _run_command logic

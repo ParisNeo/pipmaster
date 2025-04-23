@@ -29,6 +29,7 @@ from .package_manager import (
     install_or_update_multiple,
     check_vulnerabilities, # Added
     get_pip_manager,        # Added factory function
+    ensure_packages
 )
 
 # Expose the PackageManager class
@@ -57,6 +58,7 @@ __all__ = [
     "install_or_update_multiple",
     "check_vulnerabilities",
     "get_pip_manager",
+    "ensure_packages",
     # Async counterparts
     "AsyncPackageManager",
     "async_install",
