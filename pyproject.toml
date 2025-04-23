@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pipmaster"
 dynamic = ["version"] # Version read from pipmaster/__init__.py
 authors = [
-  { name="ParisNeo", email="parisneoai@gmail.com" },
+  { name="ParisNeo", email="parisneoai@gmail.com" }
 ]
 description = "A versatile Python package manager utility for simplifying package installation, updates, checks, and environment management."
 readme = "README.md"

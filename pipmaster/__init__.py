@@ -34,18 +34,6 @@ from .package_manager import (
 # Expose the PackageManager class
 from .package_manager import PackageManager
 
-# Expose asynchronous functions (optional import)
-# Users can explicitly import them if needed: from pipmaster.async_package_manager import ...
-# Or we can expose them directly here if preferred:
-from .async_package_manager import (
-    async_install,
-    async_install_if_missing,
-    # ... add all other async counterparts ...
-    async_check_vulnerabilities,
-    AsyncPackageManager,
-)
-
-
 # Deprecated functions (kept for backward compatibility)
 from .package_manager import is_version_higher, is_version_exact
 
