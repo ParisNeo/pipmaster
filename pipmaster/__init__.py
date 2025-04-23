@@ -1,4 +1,82 @@
-from .package_manager import install, install_edit, install_version, is_installed, install_if_missing, get_package_info, get_installed_version, install_or_update, install_multiple, uninstall, uninstall_multiple, install_or_update_multiple, install_requirements, is_version_exact, is_version_higher
+# -*- coding: utf-8 -*-
+"""
+pipmaster: A versatile Python package manager utility.
 
-# If you want to make the PackageManager class available as well
+Author: ParisNeo
+Created: 01/04/2024
+Last Updated: 23/04/2025
+"""
+
+# Read version dynamically - this must be present for pyproject.toml
+__version__ = "0.7.0" # Increment version
+
+# Expose the main synchronous functions
+from .package_manager import (
+    install,
+    install_if_missing,
+    install_edit,
+    install_requirements,
+    install_multiple,
+    install_multiple_if_not_installed,
+    install_version,
+    is_installed,
+    get_installed_version,
+    is_version_compatible,
+    get_package_info,
+    install_or_update,
+    uninstall,
+    uninstall_multiple,
+    install_or_update_multiple,
+    check_vulnerabilities, # Added
+    get_pip_manager,        # Added factory function
+)
+
+# Expose the PackageManager class
 from .package_manager import PackageManager
+
+# Expose asynchronous functions (optional import)
+# Users can explicitly import them if needed: from pipmaster.async_package_manager import ...
+# Or we can expose them directly here if preferred:
+from .async_package_manager import (
+    async_install,
+    async_install_if_missing,
+    # ... add all other async counterparts ...
+    async_check_vulnerabilities,
+    AsyncPackageManager,
+)
+
+
+# Deprecated functions (kept for backward compatibility)
+from .package_manager import is_version_higher, is_version_exact
+
+# Define what `import *` imports (optional but good practice)
+__all__ = [
+    "PackageManager",
+    "install",
+    "install_if_missing",
+    "install_edit",
+    "install_requirements",
+    "install_multiple",
+    "install_multiple_if_not_installed",
+    "install_version",
+    "is_installed",
+    "get_installed_version",
+    "is_version_compatible",
+    "get_package_info",
+    "install_or_update",
+    "uninstall",
+    "uninstall_multiple",
+    "install_or_update_multiple",
+    "check_vulnerabilities",
+    "get_pip_manager",
+    # Async counterparts
+    "AsyncPackageManager",
+    "async_install",
+    "async_install_if_missing",
+    "async_check_vulnerabilities", # Add others as implemented
+    # Deprecated
+    "is_version_higher",
+    "is_version_exact",
+    # Version
+    "__version__",
+]

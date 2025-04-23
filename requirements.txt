@@ -1,2 +1,2 @@
-ascii-colors
-setuptools
+packaging>=21.0
+# pip-audit is now an optional dependency [audit]

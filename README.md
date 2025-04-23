@@ -3,150 +3,196 @@
 [![GitHub stars](https://img.shields.io/github/stars/ParisNeo/pipmaster.svg?style=social&label=Stars)](https://github.com/ParisNeo/pipmaster)
 [![PyPI version](https://badge.fury.io/py/pipmaster.svg)](https://badge.fury.io/py/pipmaster)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/ParisNeo/pipmaster/blob/main/LICENSE)
+[![Python Versions](https://img.shields.io/pypi/pyversions/pipmaster.svg)](https://pypi.org/project/pipmaster/)
+
 
 ## PipMaster
 
-PipMaster is a versatile Python package manager utility designed to simplify package installation, updating, uninstallation, and information retrieval. It provides a programmatic interface to manage Python packages with support for custom index URLs, version enforcement, editable installs, and more.
+PipMaster is a versatile Python package manager utility designed to simplify package installation, updating, uninstallation, and information retrieval programmatically. Built on top of `pip`, it leverages modern libraries like `importlib.metadata` and `packaging` for robust package checking.
 
 ### Features
 
-- Install packages with options for upgrades, forced reinstalls, and custom index URLs.
-- Install specific package versions or enforce version requirements.
-- Install packages in editable mode for development.
+- Install packages with options for upgrades, forced reinstalls, custom index URLs, and extra arguments.
+- Install specific package versions.
+- **Install multiple packages only if they are not already present.** (`install_multiple_if_not_installed`)
+- Install packages in editable mode (`-e`).
 - Install multiple packages at once or from a requirements file.
-- Check if packages are installed and retrieve their versions or metadata.
-- Update or install packages conditionally.
+- **Check if packages are installed using `importlib.metadata`.**
+- **Get installed versions using `importlib.metadata`.**
+- **Check if an installed version meets a PEP 440 version specifier (e.g., `>=1.0`, `==2.3.4`) using `is_version_compatible`.**
+- Retrieve package metadata using `pip show`.
+- Update or install packages conditionally (`install_or_update`, `install_if_missing`).
 - Uninstall single or multiple packages.
 - Flexible and reusable `PackageManager` class with module-level convenience functions.
+- Basic logging for executed commands and errors.
 
 ## Installation
 
 Install PipMaster via pip:
+```bash
 pip install pipmaster
+```
+It requires Python 3.7+ and the `packaging` library.
 
 ## Usage
 
-Below are examples demonstrating the full range of PipMaster's functionality. Import it as `pipmaster` and use either the module-level functions or the `PackageManager` class directly.
-
-### Basic Package Installation
+Import `pipmaster` and use either the module-level functions or instantiate the `PackageManager` class.
 
 ```python
 import pipmaster as pm
+from pipmaster import PackageManager
 
-# Install a package (latest version by default)
+# Use module-level functions (default instance)
 pm.install("requests")
 
-# Install with an upgrade if already installed
-pm.install("numpy", upgrade=True)
+# Or create your own instance (e.g., for different python env)
+# custom_pm = PackageManager(python_executable="/path/to/venv/bin/python")
+# custom_pm.install("numpy")
+```
 
-# Force reinstall even if installed
+### Basic Installation
+```python
+# Install latest (or upgrade if installed)
+pm.install("requests")
+
+# Install without upgrade flag
+pm.install("numpy", upgrade=False)
+
+# Force reinstall
 pm.install("pandas", force_reinstall=True)
 
-# Install from a custom index URL
+# Install from custom index
 pm.install("torch", index_url="https://download.pytorch.org/whl/cu121")
-```
-Installing Specific Versions
-```python
-# Install a specific version of a package
-pm.install_version("numpy", "1.21.0")
 
-# Force reinstall a specific version
+# Install with extra pip arguments
+pm.install("scipy", extra_args=["--no-cache-dir"])
+```
+
+### Installing Specific Versions
+```python
+# Install exact version
+pm.install_version("numpy", "1.21.5")
+
+# Force reinstall specific version
 pm.install_version("requests", "2.28.1", force_reinstall=True)
 ```
-Conditional Installation
+
+### Conditional Installation (`install_if_missing`)
 ```python
-# Install only if missing, with optional version enforcement
-pm.install_if_missing("scipy")  # Install latest if not present
-pm.install_if_missing("numpy", version="1.26.4", enforce_version=True)  # Ensure exact version
-pm.install_if_missing("torch", always_update=True, index_url="https://download.pytorch.org/whl/cu121")  # Always update
+# Install latest if not present
+pm.install_if_missing("scipy")
+
+# Install specific version only if missing or wrong version installed
+pm.install_if_missing("numpy", version="1.26.4", enforce_version=True)
+
+# Install if missing, or update to latest if present
+pm.install_if_missing("torch", always_update=True, index_url="https://download.pytorch.org/whl/cu121")
 ```
-Editable Mode Installation
+
+### **NEW: Install Multiple Only if Missing**
 ```python
-# Install a local package in editable mode (-e flag)
+# Define packages needed
+packages = ["requests", "numpy", "pandas"]
+
+# Install only those from the list that are not currently installed
+pm.install_multiple_if_not_installed(packages)
+
+# Can also use custom index for the batch
+torch_packages = ["torch", "torchvision"]
+pm.install_multiple_if_not_installed(torch_packages, index_url="https://download.pytorch.org/whl/cu121")
+```
+
+### Editable Mode Installation
+```python
 pm.install_edit("/path/to/local/package")
 ```
-Installing Multiple Packages
+
+### Installing Multiple Packages (Install/Update)
 ```python
-# Install multiple packages at once
 packages = ["requests", "numpy", "pandas"]
+# Install or update all listed packages
+pm.install_multiple(packages)
+
+# Force reinstall all
 pm.install_multiple(packages, force_reinstall=True)
 
-# Install or update multiple packages
-pm.install_or_update_multiple(packages, index_url="https://custom-index.com")
+# Install/update from custom index
+pm.install_multiple(packages, index_url="https://custom-index.com")
+
+# Ensure all are installed or updated (convenience wrapper)
+pm.install_or_update_multiple(packages)
 ```
-Installing from Requirements File
+
+### Installing from Requirements File
 ```python
-# Install all packages listed in a requirements.txt file
 pm.install_requirements("requirements.txt")
+pm.install_requirements("dev-requirements.txt", index_url="https://private-repo.com")
 ```
-Checking Package Status
+
+### Checking Package Status
 ```python
-# Check if a package is installed
+# Check if installed
 if pm.is_installed("scipy"):
     print("SciPy is installed!")
 
-# Get the installed version of a package
+# Get installed version (returns str or None)
 version = pm.get_installed_version("matplotlib")
-print(f"Matplotlib version: {version}")
+if version:
+    print(f"Matplotlib version: {version}")
+else:
+    print("Matplotlib not installed.")
 
-# Get detailed package info
-pm.get_package_info("requests")  # Outputs pip show info
+# Check if version meets specifier
+if pm.is_version_compatible("requests", ">=2.25.0"):
+     print("Requests version is compatible.")
+
+if pm.is_version_compatible("numpy", "==1.21.5"):
+     print("Numpy is exactly version 1.21.5.")
+
+# Get detailed package info (runs 'pip show')
+info = pm.get_package_info("requests")
+if info:
+    print(info)
 ```
-Installing or Updating Packages
+
+### Installing or Updating
 ```python
-# Install a package if missing, or update it if installed
+# Install if missing, or update if installed
 pm.install_or_update("pandas")
 
 # Force reinstall during update
 pm.install_or_update("torch", force_reinstall=True, index_url="https://download.pytorch.org/whl/cu121")
 ```
-Uninstalling Packages
-```python
-# Uninstall a single package
-pm.uninstall("requests")
 
-# Uninstall multiple packages
+### Uninstalling Packages
+```python
+pm.uninstall("requests")
 pm.uninstall_multiple(["numpy", "pandas"])
 ```
-Advanced Example: Managing Dependencies with Versions
+
+### Advanced Example: Managing Complex Dependencies
+
+See `examples/advanced_usage.py` for a script demonstrating:
+- Defining requirements with version specifiers and index URLs.
+- Checking installed versions against specifiers using `is_version_compatible`.
+- Grouping installations by index URL.
+- Using `install_or_update_multiple` for targeted updates.
+
 ```python
-import pipmaster as pm
-import pkg_resources
+# Snippet from examples/advanced_usage.py
+required_packages_dict = {
+    "torch": {"index_url": "...", "specifier": ">=2.0.0"},
+    "transformers": {"specifier": ">=4.30.0"},
+    # ... other packages
+}
+packages_to_install_or_update = {}
+# ... logic to check is_installed and is_version_compatible ...
+# ... populate packages_to_install_or_update dictionary {index_url: [list_of_packages]} ...
 
-# List of required packages with minimum versions and optional index URLs
-required_packages = [
-    # [package, min_version, index_url]
-    ["torch", "", "https://download.pytorch.org/whl/cu121"],
-    ["diffusers", "0.30.1", None],
-    ["transformers", "4.44.2", None],
-    ["accelerate", "0.33.0", None],
-    ["imageio-ffmpeg", "0.5.1", None]
-]
+for index_url, pkgs_to_install in packages_to_install_or_update.items():
+    pm.install_or_update_multiple(pkgs_to_install, index_url=index_url)
 
-for package, min_version, index_url in required_packages:
-    if not pm.is_installed(package):
-        pm.install_or_update(package, index_url=index_url)
-    elif min_version:
-        current_version = pm.get_installed_version(package)
-        if pkg_resources.parse_version(current_version) < pkg_resources.parse_version(min_version):
-            print(f"Upgrading {package} from {current_version} to at least {min_version}")
-            pm.install_or_update(package, index_url=index_url)
-```
-Using the PackageManager Class Directly
-For more control, instantiate PackageManager directly:
-```python
-from pipmaster import PackageManager
-
-pm = PackageManager()
-
-# Custom pip command (e.g., for virtual environments)
-pm_custom = PackageManager(package_manager="/path/to/python -m pip")
-
-# Use any method as shown above
-pm.install("requests")
-pm_custom.install_version("numpy", "1.21.0")
 ```
 
 # License
 This project is licensed under the Apache 2.0 License - see the LICENSE file for details.
-

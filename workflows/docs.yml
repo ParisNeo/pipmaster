@@ -1,0 +1,68 @@
+name: Deploy Documentation to GitHub Pages
+
+# Run on pushes to the main branch (adjust if your default branch is different, e.g., 'master')
+on:
+  push:
+    branches: [ "main" ] # Or "master"
+
+  # Allows you to run this workflow manually from the Actions tab on GitHub
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-docs:
+    name: Build Sphinx Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Use the primary Python version your project supports
+          python-version: '3.10'
+          cache: 'pip' # Cache pip dependencies
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install project in editable mode + dev dependencies (which include Sphinx, theme, etc.)
+          pip install -e .[dev]
+
+      - name: Build documentation with Sphinx
+        run: |
+          # Run sphinx-build directly (more explicit than make in CI)
+          # -b html: build HTML
+          # docs/: source directory (where conf.py is)
+          # _site: output directory for the built HTML files
+          sphinx-build -b html docs/ _site
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload the '_site' directory (containing the built HTML)
+          path: '_site'
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build-docs # Run only after the build job is successful
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }} # Output the deployed URL
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4 # Action to deploy the uploaded artifact

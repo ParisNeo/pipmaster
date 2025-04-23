@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pipmaster"
+dynamic = ["version"] # Version read from pipmaster/__init__.py
+authors = [
+  { name="ParisNeo", email="parisneoai@gmail.com" },
+]
+description = "A versatile Python package manager utility for simplifying package installation, updates, checks, and environment management."
+readme = "README.md"
+requires-python = ">=3.8" # Increased slightly due to typing and importlib.metadata usage
+license = { file="LICENSE" }
+keywords = ["pip", "package manager", "installer", "dependency", "venv", "environment"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Software Distribution",
+    "Typing :: Typed", # Added classifier
+]
+dependencies = [
+    "packaging>=21.0",
+]
+
+[project.optional-dependencies]
+audit = ["pip-audit>=2.5.0"] # Optional dependency for vulnerability scanning
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.20", # For testing async code
+    "pip-audit>=2.5.0",
+    "sphinx>=5.0",
+    "sphinx-rtd-theme>=1.0", # Example theme
+    "ruff>=0.1.0", # Linter/formatter
+    "mypy>=1.0",   # Static type checker
+]
+
+
+[tool.setuptools.dynamic]
+version = {attr = "pipmaster.__version__"}
+
+[tool.setuptools.packages.find]
+exclude = ["tests*", "examples*", "docs*"]
+
+# --- Linting/Formatting Configuration (Example using Ruff) ---
+[tool.ruff]
+line-length = 88
+select = ["E", "W", "F", "I", "B", "C4", "UP", "ASYNC"] # Example rule selection
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+
+
+# --- Type Checking Configuration (Example using mypy) ---
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true # Be lenient initially
+# Add specific module ignores if needed, e.g. [tool.mypy.overrides] module = requests.* ignore_missing_imports = True
+
+[project.urls]
+Homepage = "https://github.com/ParisNeo/pipmaster"
+Repository = "https://github.com/ParisNeo/pipmaster"
+Issues = "https://github.com/ParisNeo/pipmaster/issues"
