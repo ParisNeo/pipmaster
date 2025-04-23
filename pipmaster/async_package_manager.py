@@ -17,7 +17,7 @@ import shutil
 from typing import Optional, List, Tuple, Union, Dict, Any
 
 # Assuming synchronous PackageManager provides necessary logic structure
-from .package_manager import PackageManager as SyncPackageManager # Reuse structure/logic where possible
+from .package_manager import PackageManager # Reuse structure/logic where possible
 
 logger = logging.getLogger(__name__) # Use the same logger hierarchy
 
@@ -34,7 +34,7 @@ class AsyncPackageManager:
     ):
         """Initializes the AsyncPackageManager."""
         # Reuse sync init logic to determine command base
-        sync_pm = SyncPackageManager(python_executable, pip_command_base)
+        sync_pm = PackageManager(python_executable, pip_command_base)
         self.pip_command_base = sync_pm.pip_command_base
         self.target_python_executable = sync_pm.target_python_executable
         logger.info(f"[Async] Initialized for Python: {self.target_python_executable}")
@@ -132,7 +132,7 @@ class AsyncPackageManager:
 
         # Run sync check in executor for correctness without blocking event loop
         loop = asyncio.get_running_loop()
-        sync_pm = SyncPackageManager(self.target_python_executable) # Temp sync instance
+        sync_pm = PackageManager(self.target_python_executable) # Temp sync instance
         is_inst = await loop.run_in_executor(None, sync_pm.is_installed, pkg_name) # Crude check
 
         if is_inst and not kwargs.get("always_update") and not kwargs.get("version_specifier"):

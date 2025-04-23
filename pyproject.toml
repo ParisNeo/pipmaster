@@ -43,6 +43,10 @@ dev = [
     "mypy>=1.0",   # Static type checker
 ]
 
+all = [
+    "pipmaster[audit]", # Include everything from the 'audit' group
+    "pipmaster[dev]",   # Include everything from the 'dev' group
+]
 
 [tool.setuptools.dynamic]
 version = {attr = "pipmaster.__version__"}
