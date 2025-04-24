@@ -6,6 +6,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/ParisNeo/pipmaster/blob/main/LICENSE)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/ParisNeo/pipmaster/docs.yml?branch=main&label=docs)](https://github.com/ParisNeo/pipmaster/actions/workflows/docs.yml)
 [![GitHub stars](https://img.shields.io/github/stars/ParisNeo/pipmaster.svg?style=social&label=Stars)](https://github.com/ParisNeo/pipmaster)
+[![Documentation Status](https://readthedocs.org/projects/pipmaster/badge/?version=latest)](https://parisneo.github.io/pipmaster/) 
 
 
 `pipmaster` is a versatile Python library designed to simplify and automate Python package management tasks directly from your code. It provides a robust, programmatic interface to `pip`, allowing you to install, update, check, and uninstall packages, manage requirements, target different Python environments, perform vulnerability checks, and more, with both synchronous and asynchronous interfaces.

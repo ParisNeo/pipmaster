@@ -29,6 +29,7 @@ classifiers = [
 ]
 dependencies = [
     "packaging>=21.0",
+    "ascii_colors>=0.8.0"
 ]
 
 [project.optional-dependencies]
