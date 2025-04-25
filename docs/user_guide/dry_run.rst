@@ -1,6 +1,6 @@
-***********
+***************
 Dry Run Mode
-***********
+***************
 
 Most `pipmaster` functions that modify the environment (install, uninstall, install_requirements, etc.) support a **dry run** mode.
 

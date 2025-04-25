@@ -1,9 +1,7 @@
 **********
 User Guide
 **********
-
-This guide provides detailed explanations and examples for using `pipmaster`.
-
+...
 .. toctree::
    :maxdepth: 1
 

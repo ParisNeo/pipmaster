@@ -32,7 +32,6 @@ extensions = [
 ]
 
 # Autosummary settings
-autosummary_generate = True  # Turn on automatic generation of stub files
 # Optional: Add templates for autosummary if needed
 # autosummary_context = {}
 # autosummary_imported_members = True
@@ -76,7 +75,6 @@ html_static_path = ['_static']
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'packaging': ('https://packaging.pypa.io/en/latest/', None),
-    'asyncio': ('https://docs.python.org/3/library/asyncio.html', None),
 }
 
 # MyST Parser Settings (if using Markdown files)

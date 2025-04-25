@@ -1,6 +1,6 @@
-*********************************
+******************************************
 Working with Different Environments
-*********************************
+******************************************
 
 A key feature of `pipmaster` is its ability to manage packages not just in the current Python environment, but also in other specified environments (like virtual environments).
 
