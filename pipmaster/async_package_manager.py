@@ -12,7 +12,7 @@ Last Updated: 23/04/2025
 import asyncio
 import sys
 import importlib.metadata
-import logging
+import ascii_colors as logging
 import shutil
 from typing import Optional, List, Tuple, Union, Dict, Any
 

@@ -15,7 +15,7 @@ import sys
 import importlib.metadata
 from packaging.version import parse as parse_version
 from packaging.requirements import Requirement
-import logging
+import ascii_colors as logging
 import platform
 import shutil
 from typing import Optional, List, Tuple, Union, Dict, Any

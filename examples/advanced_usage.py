@@ -1,6 +1,6 @@
 import pipmaster as pm
 import platform
-import logging
+import ascii_colors as logging
 
 # Setup logging for the example
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
