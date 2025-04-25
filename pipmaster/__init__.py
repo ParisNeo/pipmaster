@@ -8,7 +8,7 @@ Last Updated: 23/04/2025
 """
 
 # Read version dynamically - this must be present for pyproject.toml
-__version__ = "0.7.0" # Increment version
+__version__ = "0.7.0"
 
 # Expose the main synchronous functions
 from .package_manager import (
