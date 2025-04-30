@@ -1,22 +1,20 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pipmaster"
-dynamic = ["version"] # Version read from pipmaster/__init__.py
+dynamic = ["version"]
 authors = [
   { name="ParisNeo", email="parisneoai@gmail.com" }
 ]
 description = "A versatile Python package manager utility for simplifying package installation, updates, checks, and environment management."
 readme = "README.md"
-requires-python = ">=3.8" # Increased slightly due to typing and importlib.metadata usage
-license = { file="LICENSE" }
+requires-python = ">=3.8"
 keywords = ["pip", "package manager", "installer", "dependency", "venv", "environment"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -25,30 +23,36 @@ classifiers = [
     "Operating System :: OS Independent",
     "Topic :: Software Development :: Build Tools",
     "Topic :: System :: Software Distribution",
-    "Typing :: Typed", # Added classifier
+    "Typing :: Typed",
 ]
 dependencies = [
     "packaging>=21.0",
     "ascii_colors>=0.8.0"
 ]
+license = "Apache-2.0"
+license-files = ["LICENSE"]  # <-- MOVE IT HERE INSIDE [project]!!
 
 [project.optional-dependencies]
-audit = ["pip-audit>=2.5.0"] # Optional dependency for vulnerability scanning
+audit = ["pip-audit>=2.5.0"]
 dev = [
     "pytest>=7.0",
-    "pytest-asyncio>=0.20", # For testing async code
+    "pytest-asyncio>=0.20",
     "pip-audit>=2.5.0",
     "sphinx>=5.0",
-    "sphinx-rtd-theme>=1.0", # Example theme
+    "sphinx-rtd-theme>=1.0",
     "myst-parser>=0.17",
-    "ruff>=0.1.0", # Linter/formatter
-    "mypy>=1.0",   # Static type checker
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+all = [
+    "pipmaster[audit]",
+    "pipmaster[dev]",
 ]
 
-all = [
-    "pipmaster[audit]", # Include everything from the 'audit' group
-    "pipmaster[dev]",   # Include everything from the 'dev' group
-]
+[project.urls]
+Homepage = "https://github.com/ParisNeo/pipmaster"
+Repository = "https://github.com/ParisNeo/pipmaster"
+Issues = "https://github.com/ParisNeo/pipmaster/issues"
 
 [tool.setuptools.dynamic]
 version = {attr = "pipmaster.__version__"}
@@ -56,25 +60,16 @@ version = {attr = "pipmaster.__version__"}
 [tool.setuptools.packages.find]
 exclude = ["tests*", "examples*", "docs*"]
 
-# --- Linting/Formatting Configuration (Example using Ruff) ---
 [tool.ruff]
 line-length = 88
-select = ["E", "W", "F", "I", "B", "C4", "UP", "ASYNC"] # Example rule selection
+select = ["E", "W", "F", "I", "B", "C4", "UP", "ASYNC"]
 ignore = []
 
 [tool.ruff.format]
 quote-style = "double"
 
-
-# --- Type Checking Configuration (Example using mypy) ---
 [tool.mypy]
 python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
-ignore_missing_imports = true # Be lenient initially
-# Add specific module ignores if needed, e.g. [tool.mypy.overrides] module = requests.* ignore_missing_imports = True
-
-[project.urls]
-Homepage = "https://github.com/ParisNeo/pipmaster"
-Repository = "https://github.com/ParisNeo/pipmaster"
-Issues = "https://github.com/ParisNeo/pipmaster/issues"
+ignore_missing_imports = true

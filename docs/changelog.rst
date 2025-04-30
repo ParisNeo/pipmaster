@@ -7,6 +7,20 @@ All notable changes to this project will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[0.7.1] - 2025-04-29
+====================
+
+Changed
+-------
+*   Refactored core logic into `PackageManager` class. Module-level functions now wrap methods of a default instance.
+*   `is_installed` now accepts an optional `version_specifier` argument.
+*   `install_if_missing` now uses `version_specifier` instead of separate `version` and `enforce_version` arguments (old arguments are deprecated but handled with warnings).
+*   **`ensure_packages` now accepts both a dictionary and a list of requirement strings.** (New)
+*   **Added `verbose` parameter to installation/uninstallation functions to control direct output.** (New)
+*   Improved internal command execution and error handling.
+*   Updated dependencies (`packaging`, `ascii_colors`).
+*   Switched build system to use `pyproject.toml` with `setuptools`.
+*   Minimum Python version raised to 3.8.
 
 
 [0.7.0] - 2025-04-25

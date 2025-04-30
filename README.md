@@ -349,6 +349,36 @@ else:
 print("-----------------------------------\n")
 ```
 
+You can also use a simple list if you don't care about the package version:
+
+```python
+# Define your project's requirements
+my_requirements = [
+    "requests",
+    "pandas",
+    "numpy",
+    "torch"
+]
+
+print("\n--- Ensuring Project Requirements ---")
+# This will check all packages and install/update if needed
+success = pm.ensure_packages(my_requirements)
+
+if success:
+    print("All project requirements are met.")
+else:
+    print("Failed to ensure all project requirements.")
+
+# You can also use it with index_url, extra_args, dry_run
+# pm.ensure_packages(
+#     my_requirements,
+#     index_url="https://custom-index.com",
+#     extra_args=["--no-cache-dir"],
+#     dry_run=True
+# )
+print("-----------------------------------\n")
+```
+
 **How it Works:**
 
 1.  It takes the `requirements` dictionary.
