@@ -30,7 +30,7 @@ dependencies = [
     "ascii_colors>=0.8.0"
 ]
 license = "Apache-2.0"
-license-files = ["LICENSE"]  # <-- MOVE IT HERE INSIDE [project]!!
+license-files = ["LICENSE"]
 
 [project.optional-dependencies]
 audit = ["pip-audit>=2.5.0"]
@@ -43,6 +43,8 @@ dev = [
     "myst-parser>=0.17",
     "ruff>=0.1.0",
     "mypy>=1.0",
+    "black",  # For testing 'uv run'
+    "cowsay", # For testing 'uv run' (alternative)
 ]
 all = [
     "pipmaster[audit]",

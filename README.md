@@ -1,6 +1,6 @@
-# pipmaster
+# `pipmaster`: The Python Package Management Toolkit
 
-<!-- Badges - Update URLs/paths as needed -->
+<!-- Badges -->
 [![PyPI version](https://badge.fury.io/py/pipmaster.svg)](https://badge.fury.io/py/pipmaster)
 [![Python Versions](https://img.shields.io/pypi/pyversions/pipmaster.svg)](https://pypi.org/project/pipmaster/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/ParisNeo/pipmaster/blob/main/LICENSE)
@@ -8,38 +8,33 @@
 [![GitHub stars](https://img.shields.io/github/stars/ParisNeo/pipmaster.svg?style=social&label=Stars)](https://github.com/ParisNeo/pipmaster)
 [![Documentation Status](https://readthedocs.org/projects/pipmaster/badge/?version=latest)](https://parisneo.github.io/pipmaster/) 
 
+`pipmaster` is a comprehensive Python library for declarative and programmatic package management. It provides a robust, unified interface to multiple package management backends like **`pip`** and **`uv`**, allowing you to automate installations, updates, environment checks, and more, directly from your Python code with both **synchronous and asynchronous APIs**.
 
-`pipmaster` is a versatile Python library designed to simplify and automate Python package management tasks directly from your code. It provides a robust, programmatic interface to `pip`, allowing you to install, update, check, and uninstall packages, manage requirements, target different Python environments, perform vulnerability checks, and more, with both synchronous and asynchronous interfaces.
+Think of it as the swiss army knife for your application's setup scripts, build automation, or any task that requires reliable dependency management.
 
 **View the full documentation at [parisneo.github.io/pipmaster/](https://parisneo.github.io/pipmaster/).**
 
-## Why pipmaster?
+## Core Philosophy
 
-*   **Programmatic Control:** Manage packages within your scripts, setup routines, or automation tasks.
-*   **Environment Targeting:** Install and check packages in different virtual environments, not just the current one.
-*   **Rich Feature Set:** Handles specific versions, custom indexes, editable installs, requirements files, conditional installs, dry runs, and vulnerability scanning.
-*   **Modern & Robust:** Uses modern standard libraries like `importlib.metadata` and `packaging` for reliable checks.
-*   **Async Support:** Provides asynchronous functions for integration into async applications.
-*   **Extensible:** Designed with placeholders for future support of backends like UV or Conda.
+*   **Declarative & Efficient:** Use the `ensure_packages` method to define the desired state of your environment. `pipmaster` handles the rest, performing a single, efficient installation for all missing or outdated packages.
+*   **Programmatic Control:** Stop shelling out to `pip` with `os.system`. Manage your dependencies gracefully within your application logic, setup scripts, or automation tasks.
+*   **Multi-Backend Ready:** Seamlessly use the standard `pip` or switch to the high-performance `uv` backend. `conda` support is planned for the future.
+*   **Environment-Aware:** Target any Python virtual environment on your system simply by providing its path, making it perfect for managing complex projects or build servers.
+*   **Asynchronous First:** A complete `async` API is available for modern, non-blocking applications.
+*   **Safe and Informative:** A built-in `dry_run` mode lets you preview changes without modifying your system, and the `verbose` option provides detailed output for debugging.
 
-## Key Features
+## Feature Overview
 
-*   Install/upgrade single or multiple packages (`install`, `install_multiple`).
-*   Install specific package versions (`install_version`).
-*   Install packages only if they are missing (`install_multiple_if_not_installed`).
-*   Conditionally install/update based on version specifiers (`install_if_missing`).
-*   Install packages in editable mode (`install_edit`).
-*   Install packages from requirements files (`install_requirements`).
-*   Check if packages are installed, optionally matching version specifiers (`is_installed`, `is_version_compatible`).
-*   Get installed package versions (`get_installed_version`) and details (`get_package_info`).
-*   Install or update packages (`install_or_update`, `install_or_update_multiple`).
-*   Uninstall single or multiple packages (`uninstall`, `uninstall_multiple`).
-*   **Target specific Python environments** by providing the path to the Python executable.
-*   **Dry Run mode** (`dry_run=True`) to simulate commands without making changes.
-*   **Asynchronous API** (e.g., `async_install`) for non-blocking operations.
-*   **Vulnerability Checking** using `pip-audit` integration (`check_vulnerabilities`).
-*   Convenient module-level functions for common tasks.
-*   Instantiable `PackageManager` and `AsyncPackageManager` classes for more control.
+| Feature                                      | `pip` Backend | `uv` Backend (Experimental) | `async` Support |
+| -------------------------------------------- | :-----------: | :-------------------------: | :-------------: |
+| **Ensure Package State (`ensure_packages`)** |      ✅       |             ❌              |       ✅        |
+| Install / Upgrade Packages                   |      ✅       |             ✅              |       ✅        |
+| Uninstall Packages                           |      ✅       |             ✅              |       ✅        |
+| Check for Vulnerabilities (`pip-audit`)      |      ✅       |             N/A             |       ✅        |
+| Check Installed Status (`is_installed`)      |      ✅       |             N/A             |      (Sync)     |
+| Create Virtual Environments                  |      N/A      |             ✅              |       N/A       |
+| Run Ephemeral Tools (`uvx`)                  |      N/A      |             ✅              |       N/A       |
+| Dry Run Mode                                 |      ✅       |             ❌              |       ✅        |
 
 ## Installation
 
@@ -53,345 +48,158 @@ pip install pipmaster
 
 `pipmaster` offers optional features that require extra dependencies. Install them as needed:
 
-*   **Vulnerability Auditing:** Enables the `check_vulnerabilities` function.
+*   **Vulnerability Auditing:** Enables the `check_vulnerabilities` function using `pip-audit`.
     ```bash
     pip install pipmaster[audit]
     ```
 
-*   **Development Tools:** Includes tools for testing, linting, and building documentation (pytest, ruff, sphinx, etc.).
+*   **Development Environment:** For contributing to `pipmaster`, this includes all tools for testing, linting, and building documentation.
     ```bash
-    pip install pipmaster[dev]
-    # Or for editable install during development:
-    # pip install -e .[dev]
+    git clone https://github.com/ParisNeo/pipmaster.git
+    cd pipmaster
+    pip install -e .[dev]
     ```
-
-*   **All Extras:** Install all optional dependencies at once.
+*   **All Extras:**
     ```bash
     pip install pipmaster[all]
-    # Or for editable install:
-    # pip install -e .[all]
     ```
 
-## Basic Usage
+## Getting Started: The `ensure_packages` Method
 
-Import the library and use the module-level functions for quick tasks targeting the current Python environment:
+This is the most powerful and recommended way to use `pipmaster` with the `pip` backend. It efficiently checks if your requirements are met and only installs or updates what's necessary in a single batch operation. It's idempotent, meaning you can run it multiple times, and it will only act if the environment is not in the desired state.
+
+It accepts a **string**, a **list**, or a **dictionary** for requirements.
 
 ```python
 import pipmaster as pm
-import asyncio # For async examples
 
-# Install the latest version of 'requests' (or upgrade if present)
-print("Installing requests...")
-if pm.install("requests"):
-    print("Requests installed/updated.")
-else:
-    print("Failed to install requests.")
+# 1. Ensure a SINGLE package is installed (using a string)
+print("--- Ensuring 'rich' is installed ---")
+pm.ensure_packages("rich", verbose=True)
 
-# Check if 'numpy' version 1.20 or higher is installed
-print("\nChecking numpy version...")
-if pm.is_installed("numpy", version_specifier=">=1.20.0"):
-    version = pm.get_installed_version("numpy")
-    print(f"Compatible numpy version ({version}) found.")
-else:
-    print("Compatible numpy not found. Installing...")
-    pm.install("numpy>=1.20.0") # Install with the required specifier
+# 2. Ensure a LIST of packages are installed
+print("\n--- Ensuring a list of packages ---")
+pm.ensure_packages(["pandas", "numpy>=1.20"], verbose=True)
+
+# 3. Ensure a DICTIONARY of version-specific requirements are met
+print("\n--- Ensuring a dictionary of requirements ---")
+requirements = {
+    "requests": ">=2.25.0",
+    "tqdm": None  # We need it, but any installed version is fine
+}
+if pm.ensure_packages(requirements, verbose=True):
+    print("\nAll requirements are successfully met!")
 ```
 
-## Detailed Usage & Examples
+## Advanced Usage & Recipes
 
-### 1. Installation Functions
+### Recipe 1: Synchronous vs. Asynchronous API
+
+`pipmaster` provides a complete asynchronous API. Simply prefix function calls with `async_` and `await` them.
 
 ```python
-# Install latest (or upgrade)
-pm.install("pandas")
+import pipmaster as pm
+import asyncio
 
-# Install without implicit upgrade
-pm.install("matplotlib", upgrade=False)
+# Synchronous call
+pm.ensure_packages("httpx")
 
-# Force reinstall
-pm.install("scipy", force_reinstall=True)
+# Asynchronous equivalent
+async def main():
+    await pm.async_ensure_packages("httpx")
 
-# Install from a custom index URL
-pm.install("torch", index_url="https://download.pytorch.org/whl/cu121")
-
-# Install a specific version
-pm.install_version("requests", "2.28.1")
-
-# Install multiple packages (will upgrade by default)
-pm.install_multiple(["seaborn", "plotly"])
-
-# Install multiple from a specific index, forcing reinstall
-pm.install_multiple(
-    ["torchvision", "torchaudio"],
-    index_url="https://download.pytorch.org/whl/cu121",
-    force_reinstall=True
-)
-
-# Install only if missing (checks presence, not version)
-pm.install_multiple_if_not_installed(["python-dotenv", "tqdm"])
-
-# Install from requirements file
-# Create a dummy requirements.txt:
-# with open("reqs.txt", "w") as f: f.write("colorama\ntermcolor")
-pm.install_requirements("reqs.txt")
-
-# Install local package in editable mode
-# Assume 'my_local_package' exists at './my_local_package' with a setup.py or pyproject.toml
-# pm.install_edit("./my_local_package") # Uncomment if you have a local package
-
-# Conditional installation with version checking
-# Install numpy>=1.21 only if it's missing OR if installed version is < 1.21
-pm.install_if_missing("numpy", version_specifier=">=1.21.0")
-
-# Install exactly version 3.10.0 of protobuf if missing or different version installed
-pm.install_if_missing("protobuf", version_specifier="==3.10.0")
-
-# Install if missing, or ensure it's updated to latest if present
-pm.install_if_missing("pip", always_update=True)
+asyncio.run(main())
 ```
 
-### 2. Checking Package Status
+### Recipe 2: Using a Specific Backend (`pip` vs. `uv`)
+
+While module-level functions default to the current environment's `pip`, you can get a dedicated manager to control a specific backend or environment.
+
+#### `pip` Backend
 
 ```python
-# Check if installed
+from pipmaster import get_pip_manager
+
+# Target a specific Python environment
+other_env_path = "/path/to/venv/bin/python" # Or "C:/path/to/venv/Scripts/python.exe"
+# pip_manager = get_pip_manager(python_executable=other_env_path)
+# pip_manager.install("requests")
+```
+
+#### `uv` Backend
+
+This requires `uv` to be installed and available on your system's PATH.
+
+```python
+from pipmaster import get_uv_manager
+import os
+import shutil
+
+temp_env_path = "./my_uv_test_env"
+
+try:
+    uv_manager = get_uv_manager()
+
+    print(f"\n--- Creating new uv environment at {temp_env_path} ---")
+    if uv_manager.create_env(path=temp_env_path):
+        print("Environment created successfully.")
+        uv_manager.install("numpy")
+        print("Numpy installed in the new environment.")
+
+    print("\n--- Running black --version with uv's tool runner ---")
+    uv_manager.run_with_uvx(["black", "--version"], verbose=True)
+
+except FileNotFoundError:
+    print("Skipping uv examples: 'uv' executable not found in PATH.")
+finally:
+    if os.path.exists(temp_env_path):
+        shutil.rmtree(temp_env_path)
+```
+
+### Recipe 3: Inspecting the Environment
+
+Check the status of packages without changing anything. These functions are synchronous as they rely on the fast `importlib.metadata` library.
+
+```python
+import pipmaster as pm
+
 if pm.is_installed("requests"):
     print("Requests is installed.")
 
-# Check if specific version specifier is met
 if pm.is_installed("packaging", version_specifier=">=21.0"):
-    print("Compatible 'packaging' version installed.")
+    print("A compatible version of 'packaging' is installed.")
 
-# Get installed version (returns str or None)
-numpy_ver = pm.get_installed_version("numpy")
-if numpy_ver:
-    print(f"Installed numpy version: {numpy_ver}")
-else:
-    print("Numpy is not installed.")
+numpy_version = pm.get_installed_version("numpy")
+if numpy_version:
+    print(f"Installed numpy version: {numpy_version}")
 
-# Explicitly check version compatibility
-if pm.is_version_compatible("pip", ">=23.0"):
-    print("Pip version is >= 23.0")
-else:
-    print("Pip version is older than 23.0")
-
-# Get detailed package info (output of 'pip show')
-info = pm.get_package_info("pipmaster") # Get info about pipmaster itself
-if info:
-    print("\n--- pipmaster info ---")
-    print(info)
-    print("----------------------\n")
+package_info = pm.get_package_info("pipmaster")
+if package_info:
+    print("\n--- pipmaster info ---\n" + package_info)
 ```
 
-### 3. Uninstalling Packages
+### Recipe 4: Safety Features (Dry Run & Auditing)
+
+Preview changes and check for security vulnerabilities.
 
 ```python
-# Uninstall a single package (assuming 'termcolor' was installed via reqs.txt)
-# print("Uninstalling termcolor...")
-# pm.uninstall("termcolor")
+import pipmaster as pm
 
-# Uninstall multiple packages
-# print("Uninstalling colorama and python-dotenv...")
-# pm.uninstall_multiple(["colorama", "python-dotenv"])
-```
-
-### 4. Advanced Features
-
-**Targeting Other Environments**
-
-```python
-# Specify the path to the python executable of another virtual environment
-other_env_python = "/path/to/your/other/venv/bin/python" # Linux/macOS example
-# other_env_python = "C:/path/to/your/other/venv/Scripts/python.exe" # Windows example
-
-# Get a dedicated manager instance for that environment
-# Replace with a valid path if you want to test this
-# try:
-#     other_pm = pm.get_pip_manager(python_executable=other_env_python)
-#     print(f"\nChecking 'requests' in environment: {other_env_python}")
-#     if other_pm.is_installed("requests"):
-#         print("'requests' is installed in the other environment.")
-#         other_pm.uninstall("requests") # Example: Uninstall from other env
-#     else:
-#         print("'requests' is NOT installed in the other environment.")
-#         other_pm.install("requests") # Example: Install into other env
-# except FileNotFoundError:
-#      print(f"Skipping environment targeting test: Path not found '{other_env_python}'")
-
-```
-
-**Dry Run Mode**
-
-Simulate commands without making changes.
-
-```python
 print("\n--- Dry Run Examples ---")
-# Simulate installing requests
-pm.install("requests", dry_run=True)
+pm.install("requests", dry_run=True, verbose=True)
+pm.ensure_packages({"numpy": ">=1.20"}, dry_run=True, verbose=True)
 
-# Simulate uninstalling multiple packages
-pm.uninstall_multiple(["numpy", "pandas"], dry_run=True)
-
-# Simulate installing requirements
-pm.install_requirements("reqs.txt", dry_run=True)
-print("----------------------\n")
-```
-
-**Vulnerability Scanning**
-
-Requires `pipmaster[audit]` to be installed.
-
-```python
 print("\n--- Vulnerability Check ---")
-# Check the current environment (or the one targeted by a PackageManager instance)
-# Note: Needs pip-audit installed in the *environment running this script*
 try:
-    found_vulns, report = pm.check_vulnerabilities()
-    if found_vulns:
-        print("WARNING: Vulnerabilities found!")
-        # print(report) # Optionally print the full report
+    vulnerabilities_found, report = pm.check_vulnerabilities()
+    if vulnerabilities_found:
+        print("WARNING: Vulnerabilities found in environment!")
     else:
-        print("No vulnerabilities found in the environment.")
-except ImportError: # Or handle FileNotFoundError if pip-audit isn't installed
-    print("Skipping vulnerability check: pip-audit not found. Install with 'pip install pipmaster[audit]'")
-print("-------------------------\n")
+        print("No known vulnerabilities found.")
+except FileNotFoundError:
+    print("Skipping check: pip-audit not found. Install with 'pip install pipmaster[audit]'")
+
 ```
-
-### 5. Asynchronous Usage
-
-Use the `async_` prefixed functions within an `async` context.
-
-```python
-async def run_async_tasks():
-    print("\n--- Async Examples ---")
-
-    # Async install
-    print("Async: Installing 'aiohttp'...")
-    success = await pm.async_install("aiohttp")
-    if success:
-        print("Async: aiohttp installed.")
-    else:
-        print("Async: Failed to install aiohttp.")
-
-    # Async check vulnerabilities
-    print("Async: Checking vulnerabilities...")
-    try:
-         # Note: check_vulnerabilities itself isn't fully async internally yet,
-         # but the wrapper uses asyncio.create_subprocess_shell
-        found, report = await pm.async_check_vulnerabilities()
-        if found:
-             print("Async: WARNING: Vulnerabilities found!")
-        else:
-             print("Async: No vulnerabilities found.")
-    except Exception as e:
-         print(f"Async: Vulnerability check failed: {e}")
-
-    # Add more async examples as needed (e.g., async_uninstall)
-    print("--------------------\n")
-
-# To run the async functions:
-# asyncio.run(run_async_tasks()) # Uncomment to run
-```
-
-### 6. Using the `PackageManager` Class Directly
-
-For more control, especially when repeatedly targeting a specific environment or using custom pip commands:
-
-```python
-from pipmaster import PackageManager
-
-# Manager for the current environment (same as module functions)
-default_pm = PackageManager()
-default_pm.install("rich")
-
-# Manager targeting a specific environment
-# other_env_python = "/path/to/other/venv/bin/python"
-# try:
-#     other_pm = PackageManager(python_executable=other_env_python)
-#     other_pm.install("requests") # Install requests in the other environment
-#     print(f"Version in other env: {other_pm.get_installed_version('requests')}")
-# except FileNotFoundError:
-#     print(f"Path not found, cannot create manager for: {other_env_python}")
-
-
-# Advanced: Custom base command (Use with caution!)
-# custom_pm = PackageManager(pip_command_base=["/path/to/custom/pip", "--no-cache-dir"])
-# custom_pm.install("somepackage")
-```
-### 7. Ensuring Multiple Package Requirements (`ensure_packages`)
-
-For managing a set of required packages with specific versions efficiently, use `ensure_packages`. It checks all requirements and performs a single installation/update command for only those packages that need it.
-
-```python
-# Define your project's requirements
-my_requirements = {
-    "requests": ">=2.25.0,<3.0.0",
-    "pandas": ">=1.3.0",
-    "numpy": None, # Install latest if missing, otherwise accept any version
-    "torch": "==1.13.1" # Example: exact version
-}
-
-print("\n--- Ensuring Project Requirements ---")
-# This will check all packages and install/update if needed
-success = pm.ensure_packages(my_requirements)
-
-if success:
-    print("All project requirements are met.")
-else:
-    print("Failed to ensure all project requirements.")
-
-# You can also use it with index_url, extra_args, dry_run
-# pm.ensure_packages(
-#     my_requirements,
-#     index_url="https://custom-index.com",
-#     extra_args=["--no-cache-dir"],
-#     dry_run=True
-# )
-print("-----------------------------------\n")
-```
-
-You can also use a simple list if you don't care about the package version:
-
-```python
-# Define your project's requirements
-my_requirements = [
-    "requests",
-    "pandas",
-    "numpy",
-    "torch"
-]
-
-print("\n--- Ensuring Project Requirements ---")
-# This will check all packages and install/update if needed
-success = pm.ensure_packages(my_requirements)
-
-if success:
-    print("All project requirements are met.")
-else:
-    print("Failed to ensure all project requirements.")
-
-# You can also use it with index_url, extra_args, dry_run
-# pm.ensure_packages(
-#     my_requirements,
-#     index_url="https://custom-index.com",
-#     extra_args=["--no-cache-dir"],
-#     dry_run=True
-# )
-print("-----------------------------------\n")
-```
-
-**How it Works:**
-
-1.  It takes the `requirements` dictionary.
-2.  It iterates through each `package`, `specifier` pair.
-3.  It uses `self.is_installed(package, version_specifier=specifier)` to check if the current state meets the requirement.
-4.  If a requirement is *not* met, it formats the package string (e.g., `"package>=1.2.3"` or just `"package"`) and adds it to a list `packages_to_process`.
-5.  If `packages_to_process` is not empty after checking all requirements, it calls `self.install_multiple(packages=packages_to_process, upgrade=True, ...)` once to handle all necessary installations/updates efficiently.
-6.  It returns `True` if everything was okay initially or the `install_multiple` call succeeded, `False` otherwise.
-
-
-## Command-Line Interface (CLI)
-
-A dedicated command-line interface for `pipmaster` is planned for future development, allowing easy environment creation and package management from the terminal using different backends (pip, uv, conda).
 
 ## Contributing
 
@@ -399,7 +207,7 @@ Contributions are welcome! If you find a bug, have a feature request, or want to
 
 1.  **Search Issues:** Check the GitHub Issues page to see if a similar issue or request already exists.
 2.  **Open an Issue:** If not, open a new issue describing the bug or feature.
-3.  **Fork & Pull Request:** For code contributions, please fork the repository, create a new branch for your changes, and submit a pull request. Ensure your code includes tests and follows the project's style guidelines (use `ruff` for linting/formatting).
+3.  **Fork & Pull Request:** For code contributions, please fork the repository, create a new branch for your changes, and submit a pull request. Ensure your code includes tests and follows the project's style guidelines.
 
 ## License
 

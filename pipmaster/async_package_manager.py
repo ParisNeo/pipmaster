@@ -1,3 +1,5 @@
+# pipmaster/async_package_manager.py
+
 # -*- coding: utf-8 -*-
 """
 Asynchronous Package Manager using pip.
@@ -6,7 +8,7 @@ Provides an async class and functions to interact with pip asynchronously.
 
 Author: ParisNeo
 Created: 23/04/2025
-Last Updated: 23/04/2025
+Last Updated: 24/04/2025
 """
 
 import asyncio
@@ -16,10 +18,9 @@ import ascii_colors as logging
 import shutil
 from typing import Optional, List, Tuple, Union, Dict, Any
 
-# Assuming synchronous PackageManager provides necessary logic structure
-from .package_manager import PackageManager # Reuse structure/logic where possible
+from .package_manager import PackageManager, Requirement
 
-logger = logging.getLogger(__name__) # Use the same logger hierarchy
+logger = logging.getLogger(__name__)
 
 
 class AsyncPackageManager:
@@ -37,64 +38,66 @@ class AsyncPackageManager:
         sync_pm = PackageManager(python_executable, pip_command_base)
         self.pip_command_base = sync_pm.pip_command_base
         self.target_python_executable = sync_pm.target_python_executable
+        self._sync_pm_instance = sync_pm  # Keep a sync instance for metadata checks
         logger.info(f"[Async] Initialized for Python: {self.target_python_executable}")
 
     async def _run_command(
-        self, command: List[str], capture_output: bool = False, dry_run: bool = False
+        self, command: List[str], capture_output: bool = False, dry_run: bool = False, verbose: bool = False
     ) -> Tuple[bool, str]:
         """
         Runs a command asynchronously using asyncio.create_subprocess_shell.
-
-        Args:
-            command (list): Command arguments.
-            capture_output (bool): Capture stdout/stderr.
-            dry_run (bool): Simulate the command if applicable.
-
-        Returns:
-            tuple: (bool: success, str: output or error message)
         """
-        full_command_list = self.pip_command_base + command
-        command_str = " ".join(full_command_list)
-
+        # Dry run logic is synchronous and quick, handle it first.
         if dry_run:
-             # Add backend-specific dry-run flags (only pip known for now)
-             if command[0] in ["install", "uninstall", "download"]:
-                insert_pos = -1
-                for i, arg in enumerate(command):
-                    if i > 0 and not arg.startswith('-'): insert_pos = i; break
-                if insert_pos != -1:
-                    dry_run_cmd_list = self.pip_command_base + command[:insert_pos] + ["--dry-run"] + command[insert_pos:]
-                else:
-                    dry_run_cmd_list = self.pip_command_base + command + ["--dry-run"]
-                command_str = " ".join(dry_run_cmd_list)
-                logger.info(f"[Async] DRY RUN execution: {command_str}")
-                return True, f"Dry run: Command would be '{command_str}'"
-             else:
-                logger.warning(f"[Async] Dry run not applicable to command: {command[0]}. Executing normally.")
-                # Fall through
+            # Re-use the synchronous dry-run logic which is well-tested
+            # This is non-blocking and fast.
+            success, output = self._sync_pm_instance._run_command(command, dry_run=True)
+            return success, output
 
+        command_str = " ".join(self.pip_command_base + command)
         logger.info(f"[Async] Executing: {command_str}")
+
         try:
+            stdout_pipe = asyncio.subprocess.PIPE if capture_output or verbose else asyncio.subprocess.DEVNULL
+            stderr_pipe = asyncio.subprocess.PIPE if capture_output or verbose else asyncio.subprocess.DEVNULL
+
+            if verbose and not capture_output:
+                # For verbose, we stream directly to console, which is complex to do
+                # perfectly async. The simplest robust approach is to capture and print.
+                stdout_pipe = asyncio.subprocess.PIPE
+                stderr_pipe = asyncio.subprocess.STDOUT # Merge stderr into stdout
+
             process = await asyncio.create_subprocess_shell(
                 command_str,
-                stdout=asyncio.subprocess.PIPE if capture_output else None,
-                stderr=asyncio.subprocess.PIPE if capture_output else None,
+                stdout=stdout_pipe,
+                stderr=stderr_pipe,
             )
-            stdout, stderr = await process.communicate()
-            stdout_str = stdout.decode("utf-8", errors="ignore") if stdout else ""
-            stderr_str = stderr.decode("utf-8", errors="ignore") if stderr else ""
+
+            if verbose and not capture_output:
+                # Stream output if verbose
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        break
+                    print(line.decode().strip())
+                await process.wait()
+                stdout_str, stderr_str = "", "" # Already printed
+            else:
+                # Standard capture
+                stdout, stderr = await process.communicate()
+                stdout_str = stdout.decode("utf-8", errors="ignore") if stdout else ""
+                stderr_str = stderr.decode("utf-8", errors="ignore") if stderr else ""
 
             if process.returncode == 0:
                 logger.info(f"[Async] Command succeeded: {command_str}")
                 return True, stdout_str or "Command executed successfully."
             else:
                 error_message = f"[Async] Command failed (code {process.returncode}): {command_str}"
-                if capture_output:
-                    error_message += f"\n--- stdout ---\n{stdout_str}\n--- stderr ---\n{stderr_str}"
-                else:
-                    error_message += "\nCheck console output for stderr."
+                if stdout_str: error_message += f"\n--- stdout ---\n{stdout_str.strip()}"
+                if stderr_str: error_message += f"\n--- stderr ---\n{stderr_str.strip()}"
                 logger.error(error_message)
                 return False, error_message
+                
         except FileNotFoundError:
             error_message = f"[Async] Error: Command failed. Is '{self.pip_command_base[0]}' valid?"
             logger.exception(error_message)
@@ -105,49 +108,138 @@ class AsyncPackageManager:
             return False, error_message
 
     # --- Async Wrappers for Core Methods ---
-    # These mostly call _run_command with appropriate args, mirroring sync versions
 
-    async def install(self, *args: Any, **kwargs: Any) -> bool:
+    async def install(
+        self,
+        package: str,
+        index_url: Optional[str] = None,
+        force_reinstall: bool = False,
+        upgrade: bool = True,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
         """Async version of install."""
-        # Need to replicate the command building logic from sync version
-        package = args[0] if args else kwargs.get("package")
-        command = ["install", package]
-        if kwargs.get("upgrade", True): command.append("--upgrade")
-        if kwargs.get("force_reinstall", False): command.append("--force-reinstall")
-        if index_url := kwargs.get("index_url"): command.extend(["--index-url", index_url])
-        if extra_args := kwargs.get("extra_args"): command.extend(extra_args)
-        success, _ = await self._run_command(command, dry_run=kwargs.get("dry_run", False))
+        command = ["install"]
+        if upgrade: command.append("--upgrade")
+        if force_reinstall: command.append("--force-reinstall")
+        if index_url: command.extend(["--index-url", index_url])
+        if extra_args: command.extend(extra_args)
+        command.append(package)
+        success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
         return success
 
-    async def install_if_missing(self, *args: Any, **kwargs: Any) -> bool:
+    async def install_if_missing(
+        self,
+        package: str,
+        version_specifier: Optional[str] = None,
+        always_update: bool = False,
+        index_url: Optional[str] = None,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
         """Async version of install_if_missing."""
-        # This is more complex as it involves sync checks (is_installed)
-        # Option 1: Make is_installed async (but it uses sync importlib.metadata)
-        # Option 2: Run sync checks in executor
-        # Option 3: Re-implement check logic here (simplest for now)
-
-        # *** Simplified Implementation - Full logic needs careful porting ***
-        logger.warning("[Async] install_if_missing async checks are simplified/not fully ported.")
-        pkg_name = args[0] if args else kwargs.get("package") # Basic name extraction
-
-        # Run sync check in executor for correctness without blocking event loop
         loop = asyncio.get_running_loop()
-        sync_pm = PackageManager(self.target_python_executable) # Temp sync instance
-        is_inst = await loop.run_in_executor(None, sync_pm.is_installed, pkg_name) # Crude check
+        # Use run_in_executor to call the sync logic without blocking
+        # It's complex and better to not re-implement it here.
+        is_needed, install_target, force = await loop.run_in_executor(
+            None, self._sync_pm_instance._check_if_install_is_needed, package, version_specifier, always_update
+        )
 
-        if is_inst and not kwargs.get("always_update") and not kwargs.get("version_specifier"):
-             logger.info(f"[Async] {pkg_name} likely installed and no update forced. Skipping.")
-             return True
-        else:
-            logger.info(f"[Async] {pkg_name} missing or update required. Proceeding with install.")
-            # Call async install, passing relevant args through
-            return await self.install(*args, **kwargs) # Reuse async install
+        if not is_needed:
+            logger.info(f"[Async] Requirement for '{package}' already met. Skipping.")
+            return True
 
-    # ... Implement async versions for *all* other methods ...
-    # (install_multiple, install_version, uninstall, get_package_info, etc.)
-    # Remember to handle dry_run=kwargs.get("dry_run", False)
+        return await self.install(
+            install_target,
+            index_url=index_url,
+            upgrade=True,
+            force_reinstall=force,
+            extra_args=extra_args,
+            dry_run=dry_run,
+            verbose=verbose,
+        )
 
-    # Example: async check_vulnerabilities
+    async def ensure_packages(
+        self,
+        requirements: Union[str, Dict[str, Optional[str]], List[str]],
+        index_url: Optional[str] = None,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """Async version of ensure_packages."""
+        loop = asyncio.get_running_loop()
+        # The logic for checking packages is synchronous, so we run it in an executor
+        packages_to_process = await loop.run_in_executor(
+            None, self._sync_pm_instance._get_packages_to_process, requirements, verbose
+        )
+
+        if not packages_to_process:
+            logger.info("[Async][success] All specified package requirements are already met.[/success]")
+            return True
+
+        package_list_str = "', '".join(packages_to_process)
+        logger.info(f"[Async] Found {len(packages_to_process)} packages requiring installation/update: '[magenta]{package_list_str}[/magenta]'")
+        
+        return await self.install_multiple(
+            packages=packages_to_process,
+            index_url=index_url,
+            force_reinstall=False,
+            upgrade=True,
+            extra_args=extra_args,
+            dry_run=dry_run,
+            verbose=verbose,
+        )
+
+    async def install_multiple(
+        self,
+        packages: List[str],
+        index_url: Optional[str] = None,
+        force_reinstall: bool = False,
+        upgrade: bool = True,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """Async version of install_multiple."""
+        if not packages: return True
+        command = ["install"]
+        if upgrade: command.append("--upgrade")
+        if force_reinstall: command.append("--force-reinstall")
+        if index_url: command.extend(["--index-url", index_url])
+        if extra_args: command.extend(extra_args)
+        command.extend(packages)
+        success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+        return success
+    
+    async def uninstall(
+        self, package: str, extra_args: Optional[List[str]] = None, dry_run: bool = False, verbose: bool = False
+    ) -> bool:
+        """Async version of uninstall."""
+        command = ["uninstall", "-y", package]
+        if extra_args: command.extend(extra_args)
+        success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+        return success
+
+    async def uninstall_multiple(
+        self, packages: List[str], extra_args: Optional[List[str]] = None, dry_run: bool = False, verbose: bool = False
+    ) -> bool:
+        """Async version of uninstall_multiple."""
+        if not packages: return True
+        command = ["uninstall", "-y"] + packages
+        if extra_args: command.extend(extra_args)
+        success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+        return success
+
+    async def get_package_info(self, package_name: str) -> Optional[str]:
+        """Async version of get_package_info."""
+        success, output = await self._run_command(
+            ["show", package_name], capture_output=True
+        )
+        return output if success else None
+
     async def check_vulnerabilities(
         self,
         package_name: Optional[str] = None,
@@ -155,24 +247,27 @@ class AsyncPackageManager:
         extra_args: Optional[List[str]] = None,
     ) -> Tuple[bool, str]:
         """Async vulnerability check using pip-audit."""
-        pip_audit_exe = shutil.which("pip-audit")
+        # This one is a pure subprocess call, so it's a good candidate for a direct async implementation.
+        loop = asyncio.get_running_loop()
+        # `shutil.which` is sync but very fast, acceptable to call directly.
+        pip_audit_exe = await loop.run_in_executor(None, shutil.which, "pip-audit")
         if not pip_audit_exe:
              logger.error("[Async] pip-audit not found.")
              return True, "pip-audit not found."
 
-        command = [pip_audit_exe]
+        command_list = [pip_audit_exe]
         if requirements_file:
-            command.extend(["-r", requirements_file])
+            command_list.extend(["-r", requirements_file])
         elif package_name:
              logger.warning("[Async] Checking single package vuln via pip-audit not supported yet.")
 
-        if extra_args: command.extend(extra_args)
-        audit_command_str = " ".join(command)
-        logger.info(f"[Async] Running vulnerability check: {audit_command_str}")
+        if extra_args: command_list.extend(extra_args)
+        command_str = " ".join(command_list)
+        logger.info(f"[Async] Running vulnerability check: {command_str}")
 
         try:
             process = await asyncio.create_subprocess_shell(
-                audit_command_str,
+                command_str,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -187,27 +282,44 @@ class AsyncPackageManager:
                  logger.warning(f"[Async] pip-audit: Vulnerabilities found!\n{stdout_str}\n{stderr_str}")
                  return True, f"Vulnerabilities found:\n{stdout_str}\n{stderr_str}"
             else:
-                 logger.error(f"[Async] pip-audit failed (code {process.returncode}): {audit_command_str}\n{stderr_str}")
+                 logger.error(f"[Async] pip-audit failed (code {process.returncode}): {command_str}\n{stderr_str}")
                  return True, f"pip-audit error:\n{stderr_str}"
         except Exception as e:
             logger.exception(f"[Async] Failed to run pip-audit: {e}")
             return True, f"Error running pip-audit: {e}"
 
-    # Note: is_installed, get_installed_version, is_version_compatible remain sync
-    # as they use sync importlib.metadata. Run them via loop.run_in_executor if needed in async context.
-
 
 # --- Module-level Async Functions ---
 _default_async_pm = AsyncPackageManager()
 
-async def async_install(*args: Any, **kwargs: Any) -> bool:
-    return await _default_async_pm.install(*args, **kwargs)
+async def async_install(package: str, **kwargs: Any) -> bool:
+    """Installs a single package asynchronously."""
+    return await _default_async_pm.install(package, **kwargs)
 
-async def async_install_if_missing(*args: Any, **kwargs: Any) -> bool:
-    # Needs careful implementation as noted above
-    return await _default_async_pm.install_if_missing(*args, **kwargs)
+async def async_install_if_missing(package: str, **kwargs: Any) -> bool:
+    """Conditionally installs a single package asynchronously."""
+    return await _default_async_pm.install_if_missing(package, **kwargs)
 
-async def async_check_vulnerabilities(*args: Any, **kwargs: Any) -> Tuple[bool, str]:
-    return await _default_async_pm.check_vulnerabilities(*args, **kwargs)
+async def async_ensure_packages(requirements: Union[str, Dict[str, Optional[str]], List[str]], **kwargs: Any) -> bool:
+    """Ensures a set of requirements are met asynchronously."""
+    return await _default_async_pm.ensure_packages(requirements, **kwargs)
 
-# ... Add wrappers for all other async methods ...
+async def async_install_multiple(packages: List[str], **kwargs: Any) -> bool:
+    """Installs multiple packages asynchronously."""
+    return await _default_async_pm.install_multiple(packages, **kwargs)
+
+async def async_uninstall(package: str, **kwargs: Any) -> bool:
+    """Uninstalls a single package asynchronously."""
+    return await _default_async_pm.uninstall(package, **kwargs)
+
+async def async_uninstall_multiple(packages: List[str], **kwargs: Any) -> bool:
+    """Uninstalls multiple packages asynchronously."""
+    return await _default_async_pm.uninstall_multiple(packages, **kwargs)
+
+async def async_get_package_info(package_name: str) -> Optional[str]:
+    """Gets package details asynchronously."""
+    return await _default_async_pm.get_package_info(package_name)
+
+async def async_check_vulnerabilities(**kwargs: Any) -> Tuple[bool, str]:
+    """Checks for vulnerabilities asynchronously."""
+    return await _default_async_pm.check_vulnerabilities(**kwargs)
