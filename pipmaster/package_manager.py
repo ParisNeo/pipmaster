@@ -67,7 +67,7 @@ class PackageManager:
                 else self._executable
             )
             self.pip_command_base = [quoted_executable, "-m", "pip"]
-            logger.info(
+            logger.debug(
                 f"Targeting pip associated with Python: {self._executable}"
                 f" | Command base: {' '.join(self.pip_command_base)}"
             )
@@ -1405,7 +1405,7 @@ def check_vulnerabilities(
 
 
 def ensure_packages(
-    requirements: Union[Dict[str, Optional[str]], List[str]],  # Updated hint
+    requirements: Union[str, Dict[str, Optional[str]], List[str]],  # Updated hint
     index_url: Optional[str] = None,
     extra_args: Optional[List[str]] = None,
     dry_run: bool = False,
@@ -1418,8 +1418,8 @@ def ensure_packages(
     packages efficiently in a single batch if needed.
 
     Args:
-        requirements (Union[Dict[str, Optional[str]], List[str]]):
-            Either a dictionary mapping package names to optional PEP 440 version
+        requirements (Union[str, Dict[str, Optional[str]], List[str]]):
+            Either a string (the package name), a dictionary mapping package names to optional PEP 440 version
             specifiers (e.g., {"requests": ">=2.25", "numpy": None}) OR a list
             of package strings (e.g., ["requests>=2.25", "numpy"]). If a list
             item has no specifier, the latest version is assumed.
