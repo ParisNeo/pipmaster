@@ -10,7 +10,7 @@ Last Updated: 24/04/2025
 """
 
 # Read version dynamically
-__version__ = "0.9.0" # Bumped version for async feature set
+__version__ = "0.9.2" # Bumped version for async feature set
 
 # --- Synchronous API ---
 from .package_manager import (

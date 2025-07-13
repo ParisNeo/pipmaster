@@ -868,7 +868,7 @@ class PackageManager:
                     packages_to_process.append(install_target_string)
 
         if not packages_to_process:
-            logger.info("[success]All specified package requirements are already met.[/success]")
+            logger.debug("[success]All specified package requirements are already met.[/success]")
             return True
 
         # If we need to install/update packages

@@ -39,7 +39,7 @@ class AsyncPackageManager:
         self.pip_command_base = sync_pm.pip_command_base
         self.target_python_executable = sync_pm.target_python_executable
         self._sync_pm_instance = sync_pm  # Keep a sync instance for metadata checks
-        logger.info(f"[Async] Initialized for Python: {self.target_python_executable}")
+        logger.debug(f"[Async] Initialized for Python: {self.target_python_executable}")
 
     async def _run_command(
         self, command: List[str], capture_output: bool = False, dry_run: bool = False, verbose: bool = False
@@ -177,7 +177,7 @@ class AsyncPackageManager:
         )
 
         if not packages_to_process:
-            logger.info("[Async][success] All specified package requirements are already met.[/success]")
+            logger.debug("[Async][success] All specified package requirements are already met.[/success]")
             return True
 
         package_list_str = "', '".join(packages_to_process)
