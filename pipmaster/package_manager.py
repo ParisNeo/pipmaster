@@ -1578,6 +1578,8 @@ def ensure_requirements(
 
     Returns:
         bool: True if all requirements were met or successfully installed, False otherwise.
+    
+    (Delegates to PackageManager.ensure_requirements)
     """
     return _default_pm.ensure_requirements(
         requirements_file=requirements_file,
