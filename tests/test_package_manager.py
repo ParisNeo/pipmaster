@@ -103,7 +103,6 @@ class TestPackageManager(unittest.TestCase):
         self.assertTrue(result)
         mock_is_installed.assert_has_calls([call("requests"), call("numpy")], any_order=True)
         
-        # FIX: Update expected call with new default kwargs
         expected_install_cmd = ["install", "--index-url", "http://example.com", "requests", "numpy"]
         mock_run_command.assert_called_once_with(
             expected_install_cmd, dry_run=False, verbose=False, capture_output=True
@@ -121,7 +120,6 @@ class TestPackageManager(unittest.TestCase):
         self.assertTrue(result)
         mock_is_installed.assert_has_calls([call("requests"), call("numpy")], any_order=True)
 
-        # FIX: Update expected call with new default kwargs
         expected_install_cmd = ["install", "numpy"]
         mock_run_command.assert_called_once_with(
             expected_install_cmd, dry_run=False, verbose=False, capture_output=True
@@ -258,16 +256,14 @@ class TestPackageManager(unittest.TestCase):
         ], any_order=True)
         mock_install_multiple.assert_not_called()
 
-    # FIX: Use a more reliable patch for logging
     @patch.object(pm_logging.getLogger("pipmaster.package_manager"), 'error')
     def test_ensure_packages_invalid_input_type(self, mock_logger_error):
-        requirements = "not a list or dict"
+        requirements = 123  # Use a type that is actually invalid
         result = self.pm.ensure_packages(requirements) # type: ignore
         self.assertFalse(result)
         mock_logger_error.assert_called_once()
         self.assertIn("Invalid requirements type", mock_logger_error.call_args[0][0])
 
-    # FIX: Move this test inside the class
     @patch('subprocess.run')
     def test_run_pip_command_verbose_no_capture(self, mock_run):
         mock_run.return_value = self._create_mock_result(returncode=0)

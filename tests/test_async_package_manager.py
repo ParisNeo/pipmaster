@@ -108,9 +108,11 @@ async def test_async_install_success(mock_run_command, apm: AsyncPackageManager)
 
     assert result is True
     expected_cmd = [
-        "install", "requests", "--upgrade", "--no-cache" # Default upgrade=True
+        "install", "--upgrade", "--no-cache", "requests" # Correct order
     ]
-    mock_run_command.assert_awaited_once_with(expected_cmd, dry_run=False)
+    mock_run_command.assert_awaited_once_with(
+        expected_cmd, dry_run=False, verbose=False, capture_output=False
+    )
 
 @patch("pipmaster.async_package_manager.AsyncPackageManager._run_command", new_callable=AsyncMock)
 async def test_async_install_failure(mock_run_command, apm: AsyncPackageManager):
@@ -120,53 +122,71 @@ async def test_async_install_failure(mock_run_command, apm: AsyncPackageManager)
 
     assert result is False
     expected_cmd = ["install", "requests"] # upgrade=False
-    mock_run_command.assert_awaited_once_with(expected_cmd, dry_run=False)
-
-# === Test install_if_missing ===
-# Note: Testing this accurately is complex due to run_in_executor.
-# We mock the *sync* is_installed that the executor eventually calls.
-
-@patch("pipmaster.package_manager.PackageManager.is_installed") # Mock the sync method called via executor
-@patch("pipmaster.async_package_manager.AsyncPackageManager.install", new_callable=AsyncMock) # Mock the async install method it calls
-async def test_async_install_if_missing_package_missing(mock_async_install, mock_sync_is_installed, apm: AsyncPackageManager):
-    """Test install_if_missing when package is not installed."""
-    mock_sync_is_installed.return_value = False # Simulate package not found by sync check
-    mock_async_install.return_value = True # Simulate install succeeds
-
-    result = await apm.install_if_missing("requests", version_specifier=">=2.0", index_url="some_url")
-
-    assert result is True
-    mock_sync_is_installed.assert_called_once_with("requests") # Check sync is_installed was called
-    # Check that async install was called with the *original* arguments
-    mock_async_install.assert_awaited_once_with(
-        "requests", version_specifier=">=2.0", index_url="some_url"
+    mock_run_command.assert_awaited_once_with(
+        expected_cmd, dry_run=False, verbose=False, capture_output=False
     )
 
-@patch("pipmaster.package_manager.PackageManager.is_installed")
-@patch("pipmaster.async_package_manager.AsyncPackageManager.install", new_callable=AsyncMock)
-async def test_async_install_if_missing_package_present_no_update(mock_async_install, mock_sync_is_installed, apm: AsyncPackageManager):
-    """Test install_if_missing when package is present and meets requirements."""
-    mock_sync_is_installed.return_value = True # Simulate package is installed
+# === Test install_if_missing ===
 
+@patch("pipmaster.async_package_manager.AsyncPackageManager.install", new_callable=AsyncMock)
+async def test_async_install_if_missing_package_missing(mock_async_install, apm: AsyncPackageManager):
+    """Test install_if_missing when package is not installed."""
+    # Mock the sync helper method directly on the instance
+    apm._sync_pm_instance._check_if_install_is_needed = MagicMock(
+        return_value=(True, "requests>=2.0", False)  # is_needed, install_target, force
+    )
+    mock_async_install.return_value = True
+
+    result = await apm.install_if_missing(
+        "requests", version_specifier=">=2.0", index_url="some_url", extra_args=["--extra"], verbose=True
+    )
+
+    assert result is True
+    apm._sync_pm_instance._check_if_install_is_needed.assert_called_once_with("requests", ">=2.0", False)
+
+    mock_async_install.assert_awaited_once_with(
+        "requests>=2.0",
+        index_url="some_url",
+        upgrade=True,
+        force_reinstall=False,
+        extra_args=["--extra"],
+        dry_run=False,
+        verbose=True,
+    )
+
+@patch("pipmaster.async_package_manager.AsyncPackageManager.install", new_callable=AsyncMock)
+async def test_async_install_if_missing_package_present_no_update(mock_async_install, apm: AsyncPackageManager):
+    """Test install_if_missing when package is present and meets requirements."""
+    apm._sync_pm_instance._check_if_install_is_needed = MagicMock(
+        return_value=(False, "requests", False) # is_needed=False
+    )
     result = await apm.install_if_missing("requests", version_specifier=None, always_update=False)
 
     assert result is True
-    mock_sync_is_installed.assert_called_once_with("requests")
-    mock_async_install.assert_not_awaited() # Install should not be called
+    apm._sync_pm_instance._check_if_install_is_needed.assert_called_once_with("requests", None, False)
+    mock_async_install.assert_not_awaited()
 
-@patch("pipmaster.package_manager.PackageManager.is_installed")
 @patch("pipmaster.async_package_manager.AsyncPackageManager.install", new_callable=AsyncMock)
-async def test_async_install_if_missing_package_present_force_update(mock_async_install, mock_sync_is_installed, apm: AsyncPackageManager):
+async def test_async_install_if_missing_package_present_force_update(mock_async_install, apm: AsyncPackageManager):
     """Test install_if_missing when package is present but always_update=True."""
-    mock_sync_is_installed.return_value = True # Simulate package is installed
+    apm._sync_pm_instance._check_if_install_is_needed = MagicMock(
+        return_value=(True, "requests", False) # is_needed=True for update check
+    )
     mock_async_install.return_value = True
 
     result = await apm.install_if_missing("requests", always_update=True)
 
     assert result is True
-    mock_sync_is_installed.assert_called_once_with("requests")
-    # Check that async install was called, effectively triggering an update check
-    mock_async_install.assert_awaited_once_with("requests", always_update=True)
+    apm._sync_pm_instance._check_if_install_is_needed.assert_called_once_with("requests", None, True)
+    mock_async_install.assert_awaited_once_with(
+        "requests",
+        index_url=None,
+        upgrade=True,
+        force_reinstall=False,
+        extra_args=None,
+        dry_run=False,
+        verbose=False,
+    )
 
 
 # === Test Check Vulnerabilities ===
@@ -242,17 +262,16 @@ async def test_async_check_vulnerabilities_not_found(mock_create_subprocess, moc
 async def test_async_uninstall_success(mock_run_command, apm: AsyncPackageManager):
     """Test successful async uninstall."""
     mock_run_command.return_value = (True, "Successfully uninstalled")
-    # Dynamically get the uninstall method to call (if wrappers were used)
-    # For now, assuming direct call if testing the class method
-    uninstall_method = getattr(apm, 'uninstall', None) or getattr(apm, '_uninstall', None) # Placeholder if needed
-    if uninstall_method is None: pytest.skip("Uninstall method not implemented/found for test")
+    uninstall_method = getattr(apm, 'uninstall')
 
     result = await uninstall_method("requests", dry_run=True) # Test with dry run
 
     assert result is True
     expected_cmd = ["uninstall", "-y", "requests"]
     # Check that _run_command was called correctly with dry_run
-    mock_run_command.assert_awaited_once_with(expected_cmd, dry_run=True)
+    mock_run_command.assert_awaited_once_with(
+        expected_cmd, dry_run=True, verbose=False, capture_output=False
+    )
 
 
 # === Test module level wrappers (Optional but good practice) ===

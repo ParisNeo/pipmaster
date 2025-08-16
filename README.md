@@ -16,7 +16,7 @@ Think of it as the swiss army knife for your application's setup scripts, build 
 
 ## Core Philosophy
 
-*   **Declarative & Efficient:** Use the `ensure_packages` method to define the desired state of your environment. `pipmaster` handles the rest, performing a single, efficient installation for all missing or outdated packages.
+*   **Declarative & Efficient:** Use `ensure_packages` or `ensure_requirements` to define the desired state of your environment. `pipmaster` handles the rest, performing a single, efficient installation for all missing or outdated packages.
 *   **Programmatic Control:** Stop shelling out to `pip` with `os.system`. Manage your dependencies gracefully within your application logic, setup scripts, or automation tasks.
 *   **Multi-Backend Ready:** Seamlessly use the standard `pip` or switch to the high-performance `uv` backend. `conda` support is planned for the future.
 *   **Environment-Aware:** Target any Python virtual environment on your system simply by providing its path, making it perfect for managing complex projects or build servers.
@@ -28,6 +28,7 @@ Think of it as the swiss army knife for your application's setup scripts, build 
 | Feature                                      | `pip` Backend | `uv` Backend (Experimental) | `async` Support |
 | -------------------------------------------- | :-----------: | :-------------------------: | :-------------: |
 | **Ensure Package State (`ensure_packages`)** |      ✅       |             ❌              |       ✅        |
+| **Ensure from `requirements.txt`**           |      ✅       |             ❌              |       ✅        |
 | Install / Upgrade Packages                   |      ✅       |             ✅              |       ✅        |
 | Uninstall Packages                           |      ✅       |             ✅              |       ✅        |
 | Check for Vulnerabilities (`pip-audit`)      |      ✅       |             N/A             |       ✅        |
@@ -64,11 +65,13 @@ pip install pipmaster
     pip install pipmaster[all]
     ```
 
-## Getting Started: The `ensure_packages` Method
+## Getting Started: The `ensure_*` Methods
 
-This is the most powerful and recommended way to use `pipmaster` with the `pip` backend. It efficiently checks if your requirements are met and only installs or updates what's necessary in a single batch operation. It's idempotent, meaning you can run it multiple times, and it will only act if the environment is not in the desired state.
+These are the most powerful and recommended ways to use `pipmaster`. They efficiently check if your requirements are met and only install or update what's necessary in a single batch operation. They are idempotent, meaning you can run them multiple times, and they will only act if the environment is not in the desired state.
 
-It accepts a **string**, a **list**, or a **dictionary** for requirements.
+### Using `ensure_packages` (with Python objects)
+
+This method accepts a **string**, a **list**, or a **dictionary** for requirements.
 
 ```python
 import pipmaster as pm
@@ -81,14 +84,34 @@ pm.ensure_packages("rich", verbose=True)
 print("\n--- Ensuring a list of packages ---")
 pm.ensure_packages(["pandas", "numpy>=1.20"], verbose=True)
 
-# 3. Ensure a DICTIONARY of version-specific requirements are met
+# 3. Ensure a DICTIONARY of requirements are met
 print("\n--- Ensuring a dictionary of requirements ---")
 requirements = {
     "requests": ">=2.25.0",
     "tqdm": None  # We need it, but any installed version is fine
 }
 if pm.ensure_packages(requirements, verbose=True):
-    print("\nAll requirements are successfully met!")
+    print("\nAll dictionary requirements are met!")
+```
+
+### Using `ensure_requirements` (with a `requirements.txt` file)
+
+You can point directly to a `requirements.txt` file, and `pipmaster` will parse it—including options like `--index-url`—and ensure all its dependencies are met.
+
+```python
+import pipmaster as pm
+
+# Assuming you have a 'requirements.txt' in your project root:
+# --extra-index-url https://custom-repo.org/simple
+# rich # For nice terminal output
+# pandas==2.1.0
+
+print("\n--- Ensuring dependencies from requirements.txt ---")
+# Create a dummy file for the example
+with open("requirements-demo.txt", "w") as f:
+    f.write("rich\n")
+if pm.ensure_requirements("requirements-demo.txt", verbose=True):
+    print("\nAll dependencies from file are met!")
 ```
 
 ## Advanced Usage & Recipes
@@ -107,6 +130,8 @@ pm.ensure_packages("httpx")
 # Asynchronous equivalent
 async def main():
     await pm.async_ensure_packages("httpx")
+    # Also works with requirements files
+    # await pm.async_ensure_requirements("requirements.txt")
 
 asyncio.run(main())
 ```
@@ -188,6 +213,7 @@ import pipmaster as pm
 print("\n--- Dry Run Examples ---")
 pm.install("requests", dry_run=True, verbose=True)
 pm.ensure_packages({"numpy": ">=1.20"}, dry_run=True, verbose=True)
+pm.ensure_requirements("requirements-demo.txt", dry_run=True, verbose=True) # Using the file from before
 
 print("\n--- Vulnerability Check ---")
 try:

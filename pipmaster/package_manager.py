@@ -18,6 +18,7 @@ from packaging.requirements import Requirement
 import ascii_colors as logging
 import platform
 import shutil
+import shlex
 from typing import Optional, List, Tuple, Union, Dict, Any
 
 # Setup basic logging
@@ -246,9 +247,50 @@ class PackageManager:
             command.extend(extra_args)
         command.append(package)  # Append package last
         success, _ = self._run_command(
-            command, dry_run=dry_run, verbose=verbose, capture_output=not verbose
+            command, dry_run=dry_run, verbose=verbose, capture_output=False
         )
         return success
+
+    def _check_if_install_is_needed(
+        self, package: str, version_specifier: Optional[str], always_update: bool
+    ) -> Tuple[bool, str, bool]:
+        """
+        Internal helper to determine if a package needs to be installed or updated.
+        Returns: (needs_install, install_target, force_reinstall)
+        """
+        try:
+            req = Requirement(package)
+            pkg_name = req.name
+            effective_specifier = version_specifier or str(req.specifier) or None
+        except ValueError:
+            pkg_name = package
+            effective_specifier = version_specifier
+
+        is_installed_flag = self.is_installed(pkg_name)
+        install_target = package if 'req' in locals() and req.specifier else f"{pkg_name}{effective_specifier or ''}"
+        force_reinstall = False
+
+        if not is_installed_flag:
+            logger.info(f"Package '{pkg_name}' not found. Installing...")
+            return True, install_target, force_reinstall
+
+        installed_version_str = self.get_installed_version(pkg_name)
+        logger.info(f"Package '{pkg_name}' is already installed (version {installed_version_str}).")
+
+        if effective_specifier and not self.is_version_compatible(pkg_name, effective_specifier):
+            logger.warning(
+                f"Installed version {installed_version_str} of '{pkg_name}' does not meet specifier "
+                f"'{effective_specifier}'. Needs update/reinstall."
+            )
+            force_reinstall = True
+            return True, install_target, force_reinstall
+
+        if always_update:
+            logger.info(f"Flag 'always_update=True' set. Checking for updates for '{pkg_name}'.")
+            return True, install_target, force_reinstall
+
+        logger.info(f"'{pkg_name}' is installed and meets requirements. No action needed.")
+        return False, install_target, force_reinstall
 
     def install_if_missing(
         self,
@@ -745,6 +787,95 @@ class PackageManager:
             logger.exception(f"Failed to run pip-audit: {e}")
             return True, f"Error running pip-audit: {e}"  # Assume vulnerable on error
 
+    def _get_packages_to_process(self, requirements: Union[str, Dict[str, Optional[str]], List[str]], verbose: bool) -> List[str]:
+        """
+        Parses requirements and checks which packages need installation/update.
+        Internal helper for ensure_packages and async_ensure_packages.
+        """
+        if not requirements:
+            return []
+
+        if isinstance(requirements, str):
+            requirements = [requirements]
+
+        packages_to_process: List[str] = []
+        processed_packages = set()
+
+        if verbose:
+            logger.info("--- Checking Package Requirements ---")
+
+        items_to_check = []
+        is_dict_input = False
+        if isinstance(requirements, dict):
+            items_to_check = list(requirements.items())
+            is_dict_input = True
+        elif isinstance(requirements, list):
+            items_to_check = requirements
+        else:
+            logger.error(
+                f"Invalid requirements type: {type(requirements)}. Must be dict or list."
+            )
+            return []
+
+        for item in items_to_check:
+            package_name: str = ""
+            effective_specifier: Optional[str] = None
+            install_target_string: str = ""
+
+            try:
+                if is_dict_input:
+                    package_name, effective_specifier = item
+                    req_check = Requirement(package_name)
+                    if str(req_check.specifier):
+                        logger.warning(
+                            f"Specifier found in dictionary key '{package_name}'. It should be in the value. Using specifier from value: '{effective_specifier}'."
+                        )
+                    package_name = req_check.name
+                    install_target_string = f"{package_name}{effective_specifier or ''}"
+                else:
+                    package_input_str = item
+                    req = Requirement(package_input_str)
+                    package_name = req.name
+                    effective_specifier = str(req.specifier) or None
+                    install_target_string = package_input_str
+
+                if not is_dict_input and package_name in processed_packages:
+                    continue
+                processed_packages.add(package_name)
+
+                specifier_str = (
+                    f" (requires '{effective_specifier}')" if effective_specifier else ""
+                )
+                if verbose:
+                    logger.info(f"Checking requirement: '{package_name}'{specifier_str}")
+
+                if self.is_installed(
+                    package_name, version_specifier=effective_specifier
+                ):
+                    if verbose:
+                        logger.info(f"Requirement met for '{package_name}'{specifier_str}.")
+                else:
+                    installed_version = self.get_installed_version(package_name)
+                    if installed_version:
+                        logger.warning(
+                            f"Requirement NOT met for '{package_name}'. Installed: {installed_version}, Required: '{effective_specifier or 'latest'}'. Adding to update list."
+                        )
+                    else:
+                        logger.warning(
+                            f"Requirement NOT met for '{package_name}'. Package not installed. Adding to install list."
+                        )
+                    packages_to_process.append(install_target_string)
+
+            except ValueError as e:
+                logger.error(f"Invalid package/requirement string '{item}': {e}")
+                continue
+            except Exception as e:
+                logger.error(f"Error checking requirement for '{package_name or item}': {e}")
+                if install_target_string:
+                    packages_to_process.append(install_target_string)
+        
+        return packages_to_process
+
     def ensure_packages(
         self,
         requirements: Union[str, Dict[str, Optional[str]], List[str]], # Updated hint
@@ -775,97 +906,17 @@ class PackageManager:
             bool: True if all requirements were met initially or successfully
                   resolved/installed/updated, False if any installation failed.
         """
+        if not isinstance(requirements, (str, dict, list)):
+            logger.error(
+                f"Invalid requirements type: {type(requirements)}. Must be str, dict, or list."
+            )
+            return False
+            
         if not requirements:
             logger.info("ensure_packages called with empty requirements.")
             return True
 
-        # --- NEW: Handle single string input ---
-        if isinstance(requirements, str):
-            requirements = [requirements]
-
-        packages_to_process: List[str] = []
-        processed_packages = set()  # To avoid processing duplicates from list input
-
-        if verbose:
-            logger.info("--- Ensuring Package Requirements ---")
-
-        # --- Normalize input or handle different types in the loop ---
-        items_to_check = []
-        if isinstance(requirements, dict):
-            items_to_check = list(
-                requirements.items()
-            )  # List of (package, specifier) tuples
-            is_dict_input = True
-        elif isinstance(requirements, list):
-            items_to_check = requirements  # List of package strings
-            is_dict_input = False
-        else:
-            logger.error(
-                f"Invalid requirements type: {type(requirements)}. Must be dict or list."
-            )
-            return False
-
-        for item in items_to_check:
-            package_name: str = ""
-            effective_specifier: Optional[str] = None
-            install_target_string: str = ""  # The string to use if installation is needed
-
-            try:
-                if is_dict_input:
-                    package_name, effective_specifier = item  # item is (pkg, spec)
-                    # Basic validation: package name shouldn't have specifiers here
-                    req_check = Requirement(package_name)
-                    if str(req_check.specifier):
-                        logger.warning(
-                            f"Specifier found in dictionary key '{package_name}'. It should be in the value. Using specifier from value: '{effective_specifier}'."
-                        )
-                    package_name = req_check.name  # Use normalized name
-                    install_target_string = f"{package_name}{effective_specifier or ''}"
-                else:
-                    # Input is a list item (string)
-                    package_input_str = item
-                    req = Requirement(package_input_str)
-                    package_name = req.name
-                    effective_specifier = str(req.specifier) or None
-                    install_target_string = package_input_str  # Use the original string for install
-
-                # Avoid reprocessing duplicates if input was a list
-                if not is_dict_input and package_name in processed_packages:
-                    continue
-                processed_packages.add(package_name)
-
-                specifier_str = (
-                    f" (requires '{effective_specifier}')" if effective_specifier else ""
-                )
-                if verbose:
-                    logger.info(f"Checking requirement: '{package_name}'{specifier_str}")
-
-                # Check if currently installed version meets the requirement
-                if self.is_installed(
-                    package_name, version_specifier=effective_specifier
-                ):
-                    if verbose:
-                        logger.info(f"Requirement met for '{package_name}'{specifier_str}.")
-                else:
-                    installed_version = self.get_installed_version(package_name)
-                    if installed_version:
-                        logger.warning(
-                            f"Requirement NOT met for '{package_name}'. Installed: {installed_version}, Required: '{effective_specifier or 'latest'}'. Adding to update list."
-                        )
-                    else:
-                        logger.warning(
-                            f"Requirement NOT met for '{package_name}'. Package not installed. Adding to install list."
-                        )
-                    packages_to_process.append(install_target_string)
-
-            except ValueError as e:  # Handle invalid requirement strings in list input
-                logger.error(f"Invalid package/requirement string '{item}': {e}")
-                continue  # Skip invalid item
-            except Exception as e:
-                logger.error(f"Error checking requirement for '{package_name or item}': {e}")
-                # Optionally add to process list to attempt installation anyway
-                if install_target_string:
-                    packages_to_process.append(install_target_string)
+        packages_to_process = self._get_packages_to_process(requirements, verbose)
 
         if not packages_to_process:
             logger.debug("[success]All specified package requirements are already met.[/success]")
@@ -908,6 +959,69 @@ class PackageManager:
 
         return True
 
+    def ensure_requirements(
+        self,
+        requirements_file: str,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """
+        Ensures that all packages from a requirements.txt file are installed.
+
+        This method parses a requirements file, respecting comments and some pip
+        options like --index-url or --extra-index-url, and then uses the efficient
+        `ensure_packages` method to install any missing or outdated packages.
+
+        Note: Does not support recursive '-r' includes or editable '-e' installs from
+        within the file. For editable installs, use `install_edit()`.
+
+        Args:
+            requirements_file (str): Path to the requirements.txt file.
+            dry_run (bool): If True, simulate installations without making changes.
+            verbose (bool): If True, show detailed output during checks and installation.
+
+        Returns:
+            bool: True if all requirements were met or successfully installed, False otherwise.
+        """
+        try:
+            with open(requirements_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except FileNotFoundError:
+            logger.error(f"[error]Requirements file not found: {requirements_file}[/error]")
+            return False
+
+        requirements_list = []
+        pip_options = []
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # Check for pip options
+            if line.startswith('-'):
+                # Use shlex to handle quoted arguments correctly
+                pip_options.extend(shlex.split(line))
+            else:
+                # It's a package requirement. Clean up inline comments.
+                package_req = line.split('#')[0].strip()
+                if package_req:
+                    requirements_list.append(package_req)
+        
+        if not requirements_list and not pip_options:
+            logger.info(f"No valid requirements found in {requirements_file}. Nothing to do.")
+            return True
+
+        if verbose:
+            logger.info(f"Found {len(requirements_list)} requirements and options {pip_options} in {requirements_file}.")
+
+        return self.ensure_packages(
+            requirements=requirements_list,
+            index_url=None, # Let options from file handle this via extra_args
+            extra_args=pip_options,
+            dry_run=dry_run,
+            verbose=verbose
+        )
 
 # --- Module-level Convenience Functions (using default PackageManager) ---
 _default_pm = PackageManager()
@@ -1442,6 +1556,34 @@ def ensure_packages(
         verbose=verbose,  # Pass verbose
     )
 
+def ensure_requirements(
+    requirements_file: str,
+    dry_run: bool = False,
+    verbose: bool = False,
+) -> bool:
+    """
+    Ensures that all packages from a requirements.txt file are installed.
+
+    This method parses a requirements file, respecting comments and some pip
+    options like --index-url or --extra-index-url, and then uses the efficient
+    `ensure_packages` method to install any missing or outdated packages.
+
+    Note: Does not support recursive '-r' includes or editable '-e' installs from
+    within the file. For editable installs, use `install_edit()`.
+
+    Args:
+        requirements_file (str): Path to the requirements.txt file.
+        dry_run (bool): If True, simulate installations without making changes.
+        verbose (bool): If True, show detailed output during checks and installation.
+
+    Returns:
+        bool: True if all requirements were met or successfully installed, False otherwise.
+    """
+    return _default_pm.ensure_requirements(
+        requirements_file=requirements_file,
+        dry_run=dry_run,
+        verbose=verbose,
+    )
 
 # --- Deprecated Functions ---
 def is_version_higher(package_name: str, required_version: str) -> bool:
@@ -1575,7 +1717,7 @@ class UvPackageManager:
         if extra_args:
             command.extend(extra_args)
         success, _ = self._run_command(
-            command, verbose=verbose, capture_output=not verbose
+            command, verbose=verbose, capture_output=False
         )
         return success
 
@@ -1597,7 +1739,7 @@ class UvPackageManager:
         if extra_args:
             command.extend(extra_args)
         success, _ = self._run_command(
-            command, verbose=verbose, capture_output=not verbose
+            command, verbose=verbose, capture_output=False
         )
         return success
 
@@ -1614,7 +1756,7 @@ class UvPackageManager:
         if extra_args:
             command.extend(extra_args)
         success, _ = self._run_command(
-            command, verbose=verbose, capture_output=not verbose
+            command, verbose=verbose, capture_output=False
         )
         return success
 
@@ -1639,7 +1781,7 @@ class UvPackageManager:
         # ---- END OF FIX ----
 
         success, _ = self._run_command(
-            uvx_command, verbose=verbose, capture_output=not verbose
+            uvx_command, verbose=verbose, capture_output=False
         )
         return success
     

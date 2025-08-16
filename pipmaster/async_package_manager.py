@@ -16,6 +16,7 @@ import sys
 import importlib.metadata
 import ascii_colors as logging
 import shutil
+import shlex
 from typing import Optional, List, Tuple, Union, Dict, Any
 
 from .package_manager import PackageManager, Requirement
@@ -193,6 +194,66 @@ class AsyncPackageManager:
             verbose=verbose,
         )
 
+    async def ensure_requirements(
+        self,
+        requirements_file: str,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """
+        Asynchronously ensures that all packages from a requirements.txt file are installed.
+
+        This method parses a requirements file, respecting comments and some pip
+        options, and then uses the efficient `async_ensure_packages` method to
+        install any missing or outdated packages.
+
+        Note: File parsing is synchronous. The installation part is asynchronous.
+
+        Args:
+            requirements_file (str): Path to the requirements.txt file.
+            dry_run (bool): If True, simulate installations without making changes.
+            verbose (bool): If True, show detailed output during checks and installation.
+
+        Returns:
+            bool: True if all requirements were met or successfully installed, False otherwise.
+        """
+        try:
+            with open(requirements_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except FileNotFoundError:
+            logger.error(f"[Async][error]Requirements file not found: {requirements_file}[/error]")
+            return False
+
+        requirements_list = []
+        pip_options = []
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            if line.startswith('-'):
+                pip_options.extend(shlex.split(line))
+            else:
+                package_req = line.split('#')[0].strip()
+                if package_req:
+                    requirements_list.append(package_req)
+
+        if not requirements_list and not pip_options:
+            logger.info(f"[Async] No valid requirements found in {requirements_file}. Nothing to do.")
+            return True
+        
+        if verbose:
+            logger.info(f"[Async] Found {len(requirements_list)} requirements and options {pip_options} in {requirements_file}.")
+
+        return await self.ensure_packages(
+            requirements=requirements_list,
+            index_url=None, # Let options from file handle this via extra_args
+            extra_args=pip_options,
+            dry_run=dry_run,
+            verbose=verbose
+        )
+
     async def install_multiple(
         self,
         packages: List[str],
@@ -303,6 +364,10 @@ async def async_install_if_missing(package: str, **kwargs: Any) -> bool:
 async def async_ensure_packages(requirements: Union[str, Dict[str, Optional[str]], List[str]], **kwargs: Any) -> bool:
     """Ensures a set of requirements are met asynchronously."""
     return await _default_async_pm.ensure_packages(requirements, **kwargs)
+
+async def async_ensure_requirements(requirements_file: str, **kwargs: Any) -> bool:
+    """Ensures requirements from a file are met asynchronously."""
+    return await _default_async_pm.ensure_requirements(requirements_file, **kwargs)
 
 async def async_install_multiple(packages: List[str], **kwargs: Any) -> bool:
     """Installs multiple packages asynchronously."""

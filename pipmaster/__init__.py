@@ -10,7 +10,7 @@ Last Updated: 24/04/2025
 """
 
 # Read version dynamically
-__version__ = "0.9.2" # Bumped version for async feature set
+__version__ = "1.0.0" # Bumped version for async feature set
 
 # --- Synchronous API ---
 from .package_manager import (
@@ -38,6 +38,7 @@ from .package_manager import (
     install_or_update_multiple,
     check_vulnerabilities,
     ensure_packages,
+    ensure_requirements,
     is_version_higher, # Deprecated
     is_version_exact,  # Deprecated
 )
@@ -48,6 +49,7 @@ from .async_package_manager import (
     async_install,
     async_install_if_missing,
     async_ensure_packages,
+    async_ensure_requirements,
     async_install_multiple,
     async_uninstall,
     async_uninstall_multiple,
@@ -67,6 +69,7 @@ __all__ = [
 
     # Synchronous Core Functions
     "ensure_packages",
+    "ensure_requirements",
     "install",
     "install_if_missing",
     "install_multiple",
@@ -87,6 +90,7 @@ __all__ = [
     # Asynchronous Classes & Functions
     "AsyncPackageManager",
     "async_ensure_packages",
+    "async_ensure_requirements",
     "async_install",
     "async_install_if_missing",
     "async_install_multiple",
