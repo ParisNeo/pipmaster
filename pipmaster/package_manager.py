@@ -605,6 +605,7 @@ class PackageManager:
         force_reinstall: bool = False,
         extra_args: Optional[List[str]] = None,
         dry_run: bool = False,
+        verbose = False,  # Added verbose
     ) -> bool:
         """Installs a package if missing, or updates it if installed."""
         logger.info(f"Ensuring package '{package}' is installed and up-to-date.")
@@ -616,6 +617,7 @@ class PackageManager:
             upgrade=True,
             extra_args=extra_args,
             dry_run=dry_run,
+            verbose=verbose,
         )
 
     def uninstall(
