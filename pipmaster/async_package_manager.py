@@ -178,11 +178,11 @@ class AsyncPackageManager:
         )
 
         if not packages_to_process:
-            logger.debug("[Async][success] All specified package requirements are already met.[/success]")
+            logger.debug("[Async]All specified package requirements are already met.")
             return True
 
         package_list_str = "', '".join(packages_to_process)
-        logger.info(f"[Async] Found {len(packages_to_process)} packages requiring installation/update: '[magenta]{package_list_str}[/magenta]'")
+        logger.info(f"[Async] Found {len(packages_to_process)} packages requiring installation/update: '{package_list_str}'")
         
         return await self.install_multiple(
             packages=packages_to_process,
@@ -221,7 +221,7 @@ class AsyncPackageManager:
             with open(requirements_file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
         except FileNotFoundError:
-            logger.error(f"[Async][error]Requirements file not found: {requirements_file}[/error]")
+            logger.error(f"[Async]Requirements file not found: {requirements_file}")
             return False
 
         requirements_list = []

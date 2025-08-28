@@ -925,10 +925,10 @@ class PackageManager:
         # If we need to install/update packages
         package_list_str = "', '".join(packages_to_process)
         logger.info(
-            f"Found {len(packages_to_process)} packages requiring installation/update: '[magenta]{package_list_str}[/magenta]'"
+            f"Found {len(packages_to_process)} packages requiring installation/update: '{package_list_str}'"
         )
         if dry_run:
-            logger.info("[info]Dry run enabled. Simulating installation...[/info]")
+            logger.info("Dry run enabled. Simulating installation...")
         else:
             logger.info("Running installation/update command...")
 
@@ -945,15 +945,15 @@ class PackageManager:
 
         if dry_run and success:
             logger.info(
-                f"[info]Dry run successful for processing requirements. No changes were made.[/info]"
+                f"Dry run successful for processing requirements. No changes were made."
             )
         elif success:
             logger.info(
-                "[success]Successfully processed all required package installations/updates.[/success]"
+                "Successfully processed all required package installations/updates."
             )
         else:
             logger.error(
-                "[error]Failed to install/update one or more required packages.[/error]"
+                "Failed to install/update one or more required packages."
             )  # Changed log level
             return False
 
@@ -987,7 +987,7 @@ class PackageManager:
             with open(requirements_file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
         except FileNotFoundError:
-            logger.error(f"[error]Requirements file not found: {requirements_file}[/error]")
+            logger.error(f"Requirements file not found: {requirements_file}")
             return False
 
         requirements_list = []
