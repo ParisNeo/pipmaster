@@ -12,6 +12,7 @@ Last Updated: 23/04/2025
 
 import subprocess
 import sys
+from pathlib import Path
 import importlib.metadata
 from packaging.version import parse as parse_version
 from packaging.requirements import Requirement
@@ -20,6 +21,10 @@ import platform
 import shutil
 import shlex
 from typing import Optional, List, Tuple, Union, Dict, Any
+
+import os
+import locale
+
 
 # Setup basic logging
 logging.basicConfig(
@@ -39,29 +44,56 @@ class PackageManager:
         self,
         python_executable: Optional[str] = None,
         pip_command_base: Optional[List[str]] = None,
+        venv_path: Optional[str] = None,
     ):
         """
         Initializes the PackageManager.
 
         Args:
             python_executable (str, optional): Path to the Python executable
-                of the target environment. Defaults to sys.executable (current env).
-            pip_command_base (List[str], optional): Advanced: Override the base command
+                to use (default: sys.executable).
+            pip_command_base (List[str], optional): Override the base command
                 list (e.g., ['/custom/python', '-m', 'pip']). Overrides python_executable.
-                Use with caution.
+            venv_path (str, optional): Path to a virtual environment. If provided,
+                will use its Python executable. If missing, creates the venv
+                using python_executable (if provided) or sys.executable.
         """
+        self._executable = None
+
+        # 1. priorité à pip_command_base
         if pip_command_base:
             self.pip_command_base = pip_command_base
             logger.info(f"Using custom pip command base: {' '.join(pip_command_base)}")
-            self._executable = (
-                pip_command_base[0] if pip_command_base else sys.executable
-            )  # Best guess
+            self._executable = pip_command_base[0]
+
+        # 2. sinon priorité au venv_path
+        elif venv_path:
+            venv_path = Path(venv_path).resolve()
+            if os.name == "nt":
+                venv_python = venv_path / "Scripts" / "python.exe"
+            else:
+                venv_python = venv_path / "bin" / "python"
+
+            # créer si manquant
+            if not venv_python.exists():
+                base_python = python_executable or sys.executable
+                logger.info(
+                    f"Virtual environment not found at {venv_path}, creating it with {base_python}..."
+                )
+                venv_path.parent.mkdir(parents=True, exist_ok=True)
+                subprocess.run([base_python, "-m", "venv", str(venv_path)], check=True)
+                logger.info(f"Virtual environment created at {venv_path}")
+
+            if not venv_python.exists():
+                raise RuntimeError(f"Failed to create or locate virtual environment at {venv_path}")
+
+            self._executable = str(venv_python)
+            self.pip_command_base = [self._executable, "-m", "pip"]
+            logger.info(f"Using virtual environment Python: {self._executable}")
+
+        # 3. fallback ancien comportement
         else:
             self._executable = python_executable or sys.executable
-            # Ensure executable path with spaces is quoted if detected,
-            # although subprocess.run with shell=True often handles this.
-            # Using a list for the command is generally safer if shell=False,
-            # but shell=True is convenient here. Let's quote defensively.
             quoted_executable = (
                 f'"{self._executable}"'
                 if " " in self._executable and not self._executable.startswith('"')
@@ -69,136 +101,97 @@ class PackageManager:
             )
             self.pip_command_base = [quoted_executable, "-m", "pip"]
             logger.debug(
-                f"Targeting pip associated with Python: {self._executable}"
-                f" | Command base: {' '.join(self.pip_command_base)}"
+                f"Targeting pip associated with Python: {self._executable} "
+                f"| Command base: {' '.join(self.pip_command_base)}"
             )
-        self.target_python_executable = self._executable  # Store for potential use
+
+        self.target_python_executable = self._executable
+
 
     def _run_command(
         self,
         command: List[str],
         capture_output: bool = False,
         dry_run: bool = False,
-        verbose: bool = False,  # Added verbose
+        verbose: bool = False,
     ) -> Tuple[bool, str]:
-        """
-        Runs a command (typically pip) using subprocess.run.
-
-        Args:
-            command (list): The command arguments (e.g., ["install", "requests"]).
-            capture_output (bool): Whether to capture stdout/stderr.
-            dry_run (bool): If True, attempts to add the backend's dry-run flag.
-            verbose (bool): If True and capture_output is False, shows command's
-                            output directly on the console. Ignored if capture_output is True.
-
-        Returns:
-            tuple: (bool: success, str: output or error message)
-        """
         full_command_list = self.pip_command_base + command
-        log_command_list = (
-            [self.pip_command_base[0]] + self.pip_command_base[1:] + command
-        )
+        log_command_list = [self.pip_command_base[0]] + self.pip_command_base[1:] + command
         command_str_for_log = " ".join(log_command_list)
-        command_str_for_exec = " ".join(full_command_list)
 
         if dry_run:
-            # Logic for dry run simulation (remains the same)
-            # Add backend-specific dry-run flags (only pip known for now)
             if command[0] in ["install", "uninstall", "download"]:
-                insert_pos = -1
-                for i, arg in enumerate(command):
-                    if i > 0 and not arg.startswith("-"):
-                        insert_pos = i
-                        break
-                if insert_pos != -1:
-                    dry_run_command_list = (
-                        self.pip_command_base
-                        + command[:insert_pos]
-                        + ["--dry-run"]
-                        + command[insert_pos:]
-                    )
-                else:
-                    dry_run_command_list = self.pip_command_base + command + ["--dry-run"]
-
-                dry_run_cmd_str_for_log = " ".join(
-                    [self.pip_command_base[0]] + dry_run_command_list[1:]
+                insert_pos = next((i for i, arg in enumerate(command) if i > 0 and not arg.startswith("-")), -1)
+                dry_run_command_list = (
+                    self.pip_command_base + command[:insert_pos] + ["--dry-run"] + command[insert_pos:]
+                    if insert_pos != -1 else self.pip_command_base + command + ["--dry-run"]
                 )
+                dry_run_cmd_str_for_log = " ".join([self.pip_command_base[0]] + dry_run_command_list[1:])
                 logger.info(f"DRY RUN: Would execute: {dry_run_cmd_str_for_log}")
                 return True, f"Dry run: Command would be '{dry_run_cmd_str_for_log}'"
             else:
-                # For commands without a specific dry-run flag, just log the intended command
                 logger.info(f"DRY RUN: Would execute: {command_str_for_log}")
                 return True, f"Dry run: Command would be '{command_str_for_log}'"
 
         logger.info(f"Executing: {command_str_for_log}")
+
         try:
-            # ---- CORRECTED SUBPROCESS CALL ----
-            stdout_target = None
-            stderr_target = None
-            should_capture = False  # Flag to know if we need to read result.stdout/stderr
+            # Détection automatique de l’encodage système
+            encoding = locale.getpreferredencoding(False)
+
+            # Forcer UTF-8 si possible (Python >=3.7)
+            env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
 
             if capture_output:
-                # Use capture_output=True, don't set stdout/stderr explicitly
-                should_capture = True
-                run_kwargs = {
-                    "shell": True,
-                    "check": False,
-                    "capture_output": True,  # Let subprocess handle PIPE creation
-                    "text": True,
-                    "encoding": "utf-8",
-                }
+                result = subprocess.run(
+                    full_command_list,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding=encoding,
+                    errors="replace",
+                    env=env,
+                )
             else:
-                # Not capturing output, decide based on verbose flag
                 if verbose:
-                    stdout_target = None  # Default: inherit handles (console)
-                    stderr_target = None
-                else:  # Not capturing, not verbose -> discard
-                    stdout_target = subprocess.DEVNULL
-                    stderr_target = subprocess.DEVNULL
+                    result = subprocess.run(
+                        full_command_list,
+                        check=False,
+                        text=True,
+                        encoding=encoding,
+                        errors="replace",
+                        env=env,
+                    )
+                else:
+                    result = subprocess.run(
+                        full_command_list,
+                        check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        text=True,
+                        encoding=encoding,
+                        errors="replace",
+                        env=env,
+                    )
 
-                run_kwargs = {
-                    "shell": True,
-                    "check": False,
-                    "stdout": stdout_target,
-                    "stderr": stderr_target,
-                    "text": True,  # Still useful even if discarding
-                    "encoding": "utf-8",
-                }
-
-            result = subprocess.run(command_str_for_exec, **run_kwargs)
-            # ---- END CORRECTED SUBPROCESS CALL ----
-
-            # ---- CORRECTED OUTPUT HANDLING ----
-            output = result.stdout if should_capture and result.stdout else ""
-            error_out = result.stderr if should_capture and result.stderr else ""
+            output = result.stdout or ""
+            error_out = result.stderr or ""
 
             if result.returncode == 0:
                 logger.info(f"Command succeeded: {command_str_for_log}")
-                # Return captured output only if requested
-                return True, output if should_capture else "Command executed successfully."
+                return True, output if capture_output else "Command executed successfully."
             else:
-                # Error handling needs to read stdout/stderr *if they were captured*
                 error_message = f"Command failed with exit code {result.returncode}: {command_str_for_log}"
-                # Get output/error ONLY if it was piped (i.e., should_capture was True)
-                captured_stdout = (
-                    result.stdout if should_capture and result.stdout else None
-                )
-                captured_stderr = (
-                    result.stderr if should_capture and result.stderr else None
-                )
-
-                if captured_stdout:
-                    error_message += f"\n--- stdout ---\n{captured_stdout.strip()}"
-                if captured_stderr:
-                    error_message += f"\n--- stderr ---\n{captured_stderr.strip()}"
-                # If output wasn't captured but error occurred, suggest checking console
-                if not should_capture:
+                if capture_output:
+                    if output.strip():
+                        error_message += f"\n--- stdout ---\n{output.strip()}"
+                    if error_out.strip():
+                        error_message += f"\n--- stderr ---\n{error_out.strip()}"
+                else:
                     error_message += "\nCheck console output for details."
-
                 logger.error(error_message)
-                # Return the error message detail
                 return False, error_message
-            # ---- END CORRECTED OUTPUT HANDLING ----
 
         except FileNotFoundError:
             error_message = f"Error: Command execution failed. Is '{self.pip_command_base[0]}' a valid executable path?"
@@ -208,6 +201,7 @@ class PackageManager:
             error_message = f"An unexpected error occurred while running command '{command_str_for_log}': {e}"
             logger.exception(error_message)
             return False, error_message
+
 
     # --- Core Package Methods ---
 
@@ -968,62 +962,27 @@ class PackageManager:
         verbose: bool = False,
     ) -> bool:
         """
-        Ensures that all packages from a requirements.txt file are installed.
-
-        This method parses a requirements file, respecting comments and some pip
-        options like --index-url or --extra-index-url, and then uses the efficient
-        `ensure_packages` method to install any missing or outdated packages.
-
-        Note: Does not support recursive '-r' includes or editable '-e' installs from
-        within the file. For editable installs, use `install_edit()`.
-
-        Args:
-            requirements_file (str): Path to the requirements.txt file.
-            dry_run (bool): If True, simulate installations without making changes.
-            verbose (bool): If True, show detailed output during checks and installation.
-
-        Returns:
-            bool: True if all requirements were met or successfully installed, False otherwise.
+        Installs all packages listed in a requirements.txt file using pip's native -r option.
         """
-        try:
-            with open(requirements_file, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-        except FileNotFoundError:
+        if not Path(requirements_file).exists():
             logger.error(f"Requirements file not found: {requirements_file}")
             return False
 
-        requirements_list = []
-        pip_options = []
+        command = ["install", "-r", str(requirements_file)]
 
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            
-            # Check for pip options
-            if line.startswith('-'):
-                # Use shlex to handle quoted arguments correctly
-                pip_options.extend(shlex.split(line))
-            else:
-                # It's a package requirement. Clean up inline comments.
-                package_req = line.split('#')[0].strip()
-                if package_req:
-                    requirements_list.append(package_req)
-        
-        if not requirements_list and not pip_options:
-            logger.info(f"No valid requirements found in {requirements_file}. Nothing to do.")
-            return True
-
-        if verbose:
-            logger.info(f"Found {len(requirements_list)} requirements and options {pip_options} in {requirements_file}.")
-
-        return self.ensure_packages(
-            requirements=requirements_list,
-            index_url=None, # Let options from file handle this via extra_args
-            extra_args=pip_options,
-            dry_run=dry_run,
-            verbose=verbose
+        success, _ = self._run_command(
+            command, dry_run=dry_run, verbose=verbose, capture_output=not verbose
         )
+
+        if dry_run and success:
+            logger.info("Dry run successful. No changes were made.")
+        elif success:
+            logger.info(f"Successfully processed requirements from {requirements_file}.")
+        else:
+            logger.error(f"Failed to install requirements from {requirements_file}.")
+            return False
+
+        return True
 
 # --- Module-level Convenience Functions (using default PackageManager) ---
 _default_pm = PackageManager()
