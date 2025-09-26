@@ -59,7 +59,7 @@ class PackageManager:
                 using python_executable (if provided) or sys.executable.
         """
         self._executable = None
-
+        
         # 1. priorité à pip_command_base
         if pip_command_base:
             self.pip_command_base = pip_command_base
@@ -81,8 +81,19 @@ class PackageManager:
                     f"Virtual environment not found at {venv_path}, creating it with {base_python}..."
                 )
                 venv_path.parent.mkdir(parents=True, exist_ok=True)
-                subprocess.run([base_python, "-m", "venv", str(venv_path)], check=True)
-                logger.info(f"Virtual environment created at {venv_path}")
+                try:
+                    subprocess.run([base_python, "-m", "venv", str(venv_path)], check=True, capture_output=True, text=True)
+                    logger.info(f"Virtual environment created at {venv_path}")
+                except subprocess.CalledProcessError as e:
+                    error_msg = (
+                        f"Failed to create virtual environment at {venv_path}.\n"
+                        f"Command: {' '.join(e.cmd)}\n"
+                        f"Exit Code: {e.returncode}\n"
+                        f"Stdout: {e.stdout.strip()}\n"
+                        f"Stderr: {e.stderr.strip()}"
+                    )
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg) from e
 
             if not venv_python.exists():
                 raise RuntimeError(f"Failed to create or locate virtual environment at {venv_path}")
@@ -106,6 +117,15 @@ class PackageManager:
             )
 
         self.target_python_executable = self._executable
+        
+        # Determine if the selected executable is the same as the current environment's
+        try:
+            target_path = Path(self._executable).resolve(strict=True)
+            current_path = Path(sys.executable).resolve(strict=True)
+            self._is_current_env = (target_path == current_path)
+        except (FileNotFoundError, TypeError):
+             # TypeError can happen if self._executable is None, though logic should prevent this.
+            self._is_current_env = False
 
 
     def _run_command(
@@ -513,21 +533,76 @@ class PackageManager:
             bool: True if installed (and meets specifier if provided), False otherwise.
         """
         try:
-            # For VCS installs with #egg=name, this will check 'name'
-            dist = importlib.metadata.distribution(package_name)
-            if version_specifier:
-                return self.is_version_compatible(
-                    package_name, version_specifier, _dist=dist
-                )
-            return True  # Installed, no version check needed
+            if self._is_current_env:
+                # For VCS installs with #egg=name, this will check 'name'
+                dist = importlib.metadata.distribution(package_name)
+                if version_specifier:
+                    return self.is_version_compatible(
+                        package_name, version_specifier, _dist=dist
+                    )
+                return True  # Installed, no version check needed
+            else:
+                check_script = f"import importlib.metadata; exit(0) if '{package_name}' in [d.metadata['name'] for d in importlib.metadata.distributions()] else exit(1)"
+                command = [self.target_python_executable, "-c", check_script]
+                
+                try:
+                    result = subprocess.run(command, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if result.returncode != 0:
+                        return False  # Package not found
+                    
+                    # If found, and a version specifier is provided, check compatibility
+                    if version_specifier:
+                        return self.is_version_compatible(package_name, version_specifier)
+                    
+                    return True  # Installed, no version check needed                
+                except Exception as e:
+                    logger.error(f"Error checking installation of '{package_name}': {e}")
+                    return False
         except importlib.metadata.PackageNotFoundError:
             return False
 
     def get_installed_version(self, package_name: str) -> Optional[str]:
         """Gets the installed version of a package using importlib.metadata."""
         try:
-            return importlib.metadata.version(package_name)
+            if self._is_current_env:
+                return importlib.metadata.version(package_name)
+            else:
+                # Command to execute in the target environment
+                command = [
+                    self.target_python_executable,
+                    "-c",
+                    f"import importlib.metadata; print(importlib.metadata.version('{package_name}'))",
+                ]
+
+                # Execute the command and capture the output
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=False,  # Don't raise an exception on non-zero exit codes
+                )
+
+                # If the command was successful, return the stripped output
+                if result.returncode == 0:
+                    return result.stdout.strip()
+                else:
+                    # Log the error if the command failed
+                    if result.stderr:
+                        logger.error(
+                            f"Error getting version for '{package_name}' in target environment ({self.target_python_executable}):\n{result.stderr.strip()}"
+                        )
+                    return None
         except importlib.metadata.PackageNotFoundError:
+            return None
+        except FileNotFoundError:
+            logger.error(
+                f"The python executable '{self.target_python_executable}' was not found."
+            )
+            return None
+        except Exception as e:
+            logger.error(
+                f"An unexpected error occurred while getting version for '{package_name}': {e}"
+            )
             return None
 
     def get_current_package_version(self, package_name: str) -> Optional[str]:
@@ -1005,19 +1080,23 @@ class PackageManager:
         self,
         requirements_file: str,
         always_update: bool = False,
+        index_url: Optional[str] = None,
+        extra_args: Optional[List[str]] = None,
         dry_run: bool = False,
         verbose: bool = False,
     ) -> bool:
         """
         Ensures all packages from a requirements.txt file are installed, with an option to update.
 
-        This method parses a requirements file and uses the efficient `ensure_packages`
-        method to install any missing or outdated packages.
+        This method parses a requirements file, including pip options like '--extra-index-url',
+        and uses the efficient `ensure_packages` method to install any missing or outdated packages.
 
         Args:
             requirements_file (str): Path to the requirements.txt file.
             always_update (bool): If True, updates packages to the latest version if they
                                  are not explicitly pinned with '=='.
+            index_url (str, optional): Custom index URL for installations, can be overridden by the file.
+            extra_args (List[str], optional): Additional arguments for pip, can be supplemented by the file.
             dry_run (bool): If True, simulate installations without making changes.
             verbose (bool): If True, show detailed output during checks and installation.
 
@@ -1025,7 +1104,7 @@ class PackageManager:
             bool: True if all requirements were met or successfully installed, False otherwise.
         """
         req_path = Path(requirements_file)
-        if not req_path.exists():
+        if not req_path.is_file():
             logger.error(f"Requirements file not found: {requirements_file}")
             return False
 
@@ -1033,30 +1112,49 @@ class PackageManager:
             with open(req_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            # Filter out comments, empty lines, and strip whitespace
-            requirements_list = [
-                line.strip() for line in lines 
-                if line.strip() and not line.strip().startswith('#')
-            ]
+            requirements_list = []
+            extra_args_from_file = []
+
+            # Parse the file to separate packages from pip options
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue  # Skip empty lines and comments
+                
+                # Check if the line is a pip option
+                if line.startswith('-'):
+                    # Use shlex to correctly split arguments like --extra-index-url <url>
+                    extra_args_from_file.extend(shlex.split(line))
+                else:
+                    # Otherwise, it's a package requirement
+                    requirements_list.append(line)
 
             if not requirements_list:
-                logger.info(f"Requirements file '{requirements_file}' is empty or only contains comments.")
+                logger.info(f"Requirements file '{requirements_file}' contains no package definitions.")
+                # If there are only options, we still return True as there's nothing to install.
                 return True
 
             logger.info(f"Processing {len(requirements_list)} requirements from '{requirements_file}'.")
+            
+            # Combine args passed to the function with args found in the file
+            combined_extra_args = list(extra_args) if extra_args else []
+            combined_extra_args.extend(extra_args_from_file)
             
             # Delegate to the powerful ensure_packages method
             return self.ensure_packages(
                 requirements=requirements_list,
                 always_update=always_update,
+                index_url=index_url,
+                extra_args=combined_extra_args,
                 dry_run=dry_run,
                 verbose=verbose
             )
 
         except Exception as e:
-            logger.error(f"Failed to read or parse requirements file '{requirements_file}': {e}")
+            logger.error(f"Failed to read or parse requirements file '{requirements_file}': {e}", exc_info=True)
             return False
-
+        
+        
 # --- Module-level Convenience Functions (using default PackageManager) ---
 _default_pm = PackageManager()
 
