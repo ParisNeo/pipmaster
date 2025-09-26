@@ -64,7 +64,7 @@ class PackageManager:
         if pip_command_base:
             self.pip_command_base = pip_command_base
             logger.info(f"Using custom pip command base: {' '.join(pip_command_base)}")
-            self._executable = pip_command_base
+            self._executable = pip_command_base[0]
 
         # 2. sinon priorité au venv_path
         elif venv_path:
@@ -116,17 +116,17 @@ class PackageManager:
         verbose: bool = False,
     ) -> Tuple[bool, str]:
         full_command_list = self.pip_command_base + command
-        log_command_list = [self.pip_command_base] + self.pip_command_base[1:] + command
-        command_str_for_log = " ".join(log_command_list)
+        # FIX: Ensure all items are strings before joining
+        command_str_for_log = " ".join(map(str, full_command_list))
 
         if dry_run:
-            if command in ["install", "uninstall", "download"]:
+            if command[0] in ["install", "uninstall", "download"]:
                 insert_pos = next((i for i, arg in enumerate(command) if i > 0 and not arg.startswith("-")), -1)
                 dry_run_command_list = (
                     self.pip_command_base + command[:insert_pos] + ["--dry-run"] + command[insert_pos:]
                     if insert_pos != -1 else self.pip_command_base + command + ["--dry-run"]
                 )
-                dry_run_cmd_str_for_log = " ".join([self.pip_command_base] + dry_run_command_list[1:])
+                dry_run_cmd_str_for_log = " ".join(map(str, dry_run_command_list))
                 logger.info(f"DRY RUN: Would execute: {dry_run_cmd_str_for_log}")
                 return True, f"Dry run: Command would be '{dry_run_cmd_str_for_log}'"
             else:
@@ -194,7 +194,7 @@ class PackageManager:
                 return False, error_message
 
         except FileNotFoundError:
-            error_message = f"Error: Command execution failed. Is '{self.pip_command_base}' a valid executable path?"
+            error_message = f"Error: Command execution failed. Is '{self.pip_command_base[0]}' a valid executable path?"
             logger.exception(error_message)
             return False, error_message
         except Exception as e:
@@ -364,7 +364,7 @@ class PackageManager:
                 )
                 return True
             install_target = (
-                package if req.specifier else f"{pkg_name}{effective_specifier or ''}"
+                package if 'req' in locals() and req.specifier else f"{pkg_name}{effective_specifier or ''}"
             )
             logger.info(
                 f"Attempting to install/update '{pkg_name}' to satisfy '{install_target}'..."
@@ -513,6 +513,7 @@ class PackageManager:
             bool: True if installed (and meets specifier if provided), False otherwise.
         """
         try:
+            # For VCS installs with #egg=name, this will check 'name'
             dist = importlib.metadata.distribution(package_name)
             if version_specifier:
                 return self.is_version_compatible(
@@ -555,7 +556,7 @@ class PackageManager:
 
         Args:
             package_name (str): The name of the package.
-            version_specifier (str): A PEP 440 version specifier string (e.g., ">=1.0").
+            version_specifier (str): A PEP 440 version specifier string (e.g., ">=1.0", "<2.0").
             _dist (Distribution, optional): Pre-fetched distribution object.
 
         Returns:
@@ -801,98 +802,112 @@ class PackageManager:
             logger.info("--- Checking Package Requirements ---")
 
         items_to_check = []
-        is_dict_input = False
-        if isinstance(requirements, dict):
+        is_dict_input = isinstance(requirements, dict)
+        
+        if is_dict_input:
             items_to_check = list(requirements.items())
-            is_dict_input = True
         elif isinstance(requirements, list):
             items_to_check = requirements
         else:
-            logger.error(
-                f"Invalid requirements type: {type(requirements)}. Must be dict or list."
-            )
+            logger.error(f"Invalid requirements type: {type(requirements)}. Must be dict or list.")
             return []
 
         for item in items_to_check:
-            package_name: str = ""
-            effective_specifier: Optional[str] = None
-            install_target_string: str = ""
-            is_vcs = False
-
             try:
+                # Handle structured dictionary for conditional VCS install
+                if isinstance(item, dict):
+                    package_name = item.get("name")
+                    vcs_url = item.get("vcs")
+                    version_requirement = item.get("condition")
+
+                    if not all([package_name, vcs_url, version_requirement]):
+                        logger.error(f"Invalid dictionary requirement. Must contain 'name', 'vcs', and 'condition'. Got: {item}")
+                        continue
+                    
+                    if package_name in processed_packages: continue
+                    processed_packages.add(package_name)
+
+                    # CORRECTED LOGIC: Install from VCS only if the requirement is NOT met.
+                    requirement_is_met = self.is_installed(package_name, version_specifier=version_requirement)
+
+                    if not requirement_is_met:
+                        installed_version = self.get_installed_version(package_name)
+                        if installed_version:
+                            install_reason = f"Installed version {installed_version} of '{package_name}' does not meet requirement '{version_requirement}'."
+                        else:
+                            install_reason = f"Package '{package_name}' is not installed."
+                        
+                        logger.warning(f"{install_reason} Adding '{vcs_url}' to the install list.")
+                        packages_to_process.append(vcs_url)
+                    elif verbose:
+                        installed_version = self.get_installed_version(package_name)
+                        logger.info(f"Requirement for '{package_name}' is met. Installed version {installed_version} satisfies '{version_requirement}'. Skipping VCS install.")
+                    
+                    continue
+
+                # --- Existing logic for str and simple dict items ---
+                package_name: str = ""
+                effective_specifier: Optional[str] = None
+                install_target_string: str = ""
+                is_vcs = False
+                is_pinned = False
+
                 if is_dict_input:
                     package_name, effective_specifier = item
-                    # For dicts, we build the requirement string for parsing and installation
                     install_target_string = f"{package_name}{effective_specifier or ''}"
                     req = Requirement(install_target_string)
                     package_name = req.name
-                else:
+                    is_pinned = "==" in (effective_specifier or "")
+                else: # str or list item
                     package_input_str = item
-                    # For list/str, the item is the full requirement string
                     install_target_string = package_input_str
-                    if "git+" in package_input_str:
+                    if any(package_input_str.startswith(vcs) for vcs in ["git+", "hg+", "svn+", "bzr+"]):
                         is_vcs = True
-                        # For VCS, we can't reliably parse the name without installing,
-                        # but we can try to extract it from #egg=...
                         if "#egg=" in package_input_str:
-                            package_name = package_input_str.split("#egg=")[-1]
+                            package_name = package_input_str.split("#egg=")[-1].split("&")[0]
                         else:
-                            # If no egg, we can't check if it's installed reliably by name.
-                            # We'll add it to the process list and let pip handle it.
                             package_name = package_input_str 
                     else:
                         req = Requirement(package_input_str)
                         package_name = req.name
                         effective_specifier = str(req.specifier) or None
+                        is_pinned = "==" in (effective_specifier or "")
 
-                if package_name in processed_packages:
-                    continue
+                if package_name in processed_packages: continue
                 processed_packages.add(package_name)
 
-                specifier_str = (f" (requires '{effective_specifier}')" if effective_specifier else "")
                 if verbose:
                     logger.info(f"Checking requirement: '{install_target_string}'")
 
-                # Handle VCS (e.g., git) URLs
                 if is_vcs:
                     if always_update:
                         logger.info(f"VCS requirement '{install_target_string}' will be updated as always_update is True.")
                         packages_to_process.append(install_target_string)
-                    else:
-                        # Without always_update, we can't easily check if the remote has changed.
-                        # A simple approach is to install if the package name isn't present.
-                        if package_name and not self.is_installed(package_name):
-                             logger.warning(f"VCS Requirement '{package_name}' not found. Adding to install list.")
-                             packages_to_process.append(install_target_string)
-                        elif verbose:
-                             logger.info(f"VCS requirement '{package_name or install_target_string}' is assumed to be installed and always_update is False.")
+                    elif package_name and not self.is_installed(package_name):
+                         logger.warning(f"VCS Requirement '{package_name}' not found. Adding to install list.")
+                         packages_to_process.append(install_target_string)
+                    elif verbose:
+                         logger.info(f"VCS requirement '{package_name or install_target_string}' is assumed to be installed and always_update is False.")
                     continue
 
-                # Standard package checks
                 if self.is_installed(package_name, version_specifier=effective_specifier):
-                    if always_update and not effective_specifier:
-                        logger.info(f"'{package_name}' is installed, but always_update=True. Adding to update list.")
-                        packages_to_process.append(install_target_string)
+                    if always_update and not is_pinned:
+                        logger.info(f"'{package_name}' is installed, but always_update=True and not pinned. Adding to update list.")
+                        packages_to_process.append(package_name) # Add bare package name for upgrade
                     elif verbose:
-                        logger.info(f"Requirement met for '{package_name}'{specifier_str}.")
+                        spec_str = f" (satisfies '{effective_specifier}')" if effective_specifier else ""
+                        logger.info(f"Requirement met for '{package_name}'{spec_str}.")
                 else:
                     installed_version = self.get_installed_version(package_name)
                     if installed_version:
-                        logger.warning(
-                            f"Requirement NOT met for '{package_name}'. Installed: {installed_version}, Required: '{effective_specifier or 'latest'}'. Adding to update list."
-                        )
+                        logger.warning(f"Requirement NOT met for '{package_name}'. Installed: {installed_version}, Required: '{effective_specifier or 'latest'}'. Adding to update list.")
                     else:
-                        logger.warning(
-                            f"Requirement NOT met for '{package_name}'. Package not installed. Adding to install list."
-                        )
+                        logger.warning(f"Requirement NOT met for '{package_name}'. Package not installed. Adding to install list.")
                     packages_to_process.append(install_target_string)
 
-            except ValueError as e:
-                logger.error(f"Invalid package/requirement string '{item}': {e}")
-                continue
             except Exception as e:
-                logger.error(f"Error checking requirement for '{package_name or item}': {e}")
-                if install_target_string:
+                logger.error(f"Error checking requirement for '{item}': {e}", exc_info=True)
+                if 'install_target_string' in locals() and install_target_string:
                     packages_to_process.append(install_target_string)
         
         return packages_to_process
@@ -916,9 +931,12 @@ class PackageManager:
         Args:
             requirements (Union[str, Dict[str, Optional[str]], List[str]]):
                 - str: A single package requirement string (e.g., "requests>=2.25", "git+https://github.com/user/repo.git").
-                - List[str]: A list of package requirement strings.
+                - List[str]: A list of package requirement strings. Can also contain dictionaries for advanced cases.
                 - Dict[str, Optional[str]]: A dictionary mapping package names to
                   optional PEP 440 version specifiers. GitHub URLs are not supported in this format.
+                - **Advanced List Usage**: A list item can be a dictionary for conditional VCS installation:
+                  `{"name": "pkg", "vcs": "git+...", "condition": ">=1.0"}`.
+                  This installs from the VCS URL if `pkg` is not installed or if its installed version does not satisfy ">=1.0".
             always_update (bool): If True, updates packages to the latest version if they
                                  don't have a specific version pin (e.g., "package==1.2.3").
             index_url (str, optional): Custom index URL for installations.
@@ -1015,7 +1033,7 @@ class PackageManager:
             with open(req_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            # Filter out comments and empty lines, and strip whitespace
+            # Filter out comments, empty lines, and strip whitespace
             requirements_list = [
                 line.strip() for line in lines 
                 if line.strip() and not line.strip().startswith('#')
@@ -1551,9 +1569,11 @@ def ensure_packages(
     Args:
         requirements (Union[str, Dict[str, Optional[str]], List[str]]):
             - str: A single package requirement string (e.g., "requests>=2.25", "git+https://github.com/user/repo.git").
-            - List[str]: A list of package requirement strings.
-            - Dict[str, Optional[str]]: A dictionary mapping package names to
-              optional PEP 440 version specifiers. GitHub URLs are not supported in this format.
+            - List[str]: A list of package requirement strings. Can also contain dictionaries for advanced cases.
+            - Dict[str, Optional[str]]: A dictionary mapping package names to optional PEP 440 version specifiers.
+            - **Advanced List Usage**: A list item can be a dictionary for conditional VCS installation:
+              `{"name": "pkg", "vcs": "git+...", "condition": ">=1.0"}`.
+              This installs from the VCS URL if `pkg` is not installed or if its installed version does not satisfy ">=1.0".
         always_update (bool): If True, updates packages to the latest version if they
                              don't have a specific version pin (e.g., "package==1.2.3").
         index_url (str, optional): Custom index URL for installations.

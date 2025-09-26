@@ -8,20 +8,32 @@
 [![GitHub stars](https://img.shields.io/github/stars/ParisNeo/pipmaster.svg?style=social&label=Stars)](https://github.com/ParisNeo/pipmaster)
 [![Documentation Status](https://readthedocs.org/projects/pipmaster/badge/?version=latest)](https://parisneo.github.io/pipmaster/) 
 
-`pipmaster` is a comprehensive Python library for declarative and programmatic package management. It provides a robust, unified interface to multiple package management backends like **`pip`** and **`uv`**, allowing you to automate installations, updates, environment checks, and more, directly from your Python code. With both **synchronous and asynchronous APIs**, it's designed to be a game-changer for developers who need to guarantee that their applications and tools work out-of-the-box for end-users by programmatically ensuring all dependencies are correctly installed.
+Stop telling your users to `pip install -r requirements.txt`. Start building professional, self-sufficient Python applications that **just work**.
 
-Think of it as the swiss army knife for your application's setup scripts, build automation, or any task that requires reliable dependency management.
+`pipmaster` is the ultimate toolkit for declarative and programmatic package management. It provides a robust, unified interface to backends like **`pip`** and **`uv`**, allowing you to automate installations, updates, and environment validation directly from your Python code. With both **synchronous and asynchronous APIs**, it's designed to guarantee that your applications work out-of-the-box by programmatically ensuring all dependencies are correctly installed.
 
 **View the full documentation at [parisneo.github.io/pipmaster/](https://parisneo.github.io/pipmaster/).**
 
-## Core Philosophy
+## Why `pipmaster`? The Power to Build Better Software
 
-*   **Declarative & Idempotent:** Use `ensure_packages` or `ensure_requirements` to define the desired state of your environment. `pipmaster` handles the rest, performing a single, efficient installation for all missing or outdated packages. This declarative approach means you can run your setup logic repeatedly without side effects, guaranteeing a consistent environment every time.
-*   **Programmatic Control:** Stop shelling out to `pip` with `os.system`. Manage your dependencies gracefully within your application logic, setup scripts, or automation tasks.
-*   **Multi-Backend Ready:** Seamlessly use the standard `pip` or switch to the high-performance `uv` backend. `conda` support is planned for the future.
-*   **Environment-Aware:** Target any Python virtual environment on your system simply by providing its path, making it perfect for managing complex projects or build servers.
-*   **Asynchronous First:** A complete `async` API is available for modern, non-blocking applications.
-*   **Safe and Informative:** A built-in `dry_run` mode lets you preview changes without modifying your system, and the `verbose` option provides detailed output for debugging.
+`pipmaster` bridges the gap between development and deployment, solving the classic "it works on my machine" problem.
+
+*   **Automate Your Setup:** Create a seamless first-time experience. Instead of manual setup steps, your application can configure its own environment on launch.
+*   **Write Self-Healing Applications:** Programmatically verify dependencies every time your app runs. If a user accidentally uninstalls a critical package, your application can detect it and fix itself.
+*   **Eliminate "Dependency Hell" for Users:** By managing dependencies automatically, you remove the biggest source of friction for non-technical users and simplify deployment for everyone.
+*   **Simplify Complex Projects:** Effortlessly manage dependencies across multiple virtual environments, build servers, or CI/CD pipelines from a single, consistent interface.
+*   **Code with Confidence:** Use the `dry_run` mode to safely preview any changes before they are made, and leverage the `verbose` flag for crystal-clear debugging.
+*   **Future-Proof Your Scripts:** With a multi-backend architecture (`pip`, `uv`, and `conda` planned), your automation scripts remain stable even as the packaging ecosystem evolves.
+
+## Key Use Cases
+
+`pipmaster` is the swiss army knife for anyone who builds and ships Python software.
+
+*   **Desktop GUI Applications (PyQt, Tkinter, etc.):** Ensure all UI libraries and dependencies are met on the very first launch, providing a smooth, installer-like experience.
+*   **Command-Line Tools (Click, Typer, Argparse):** Create a fantastic user experience by having your CLI tool install its own dependencies, making it instantly usable.
+*   **Data Science & ML Projects:** Guarantee that team members, servers, and Docker containers all share the exact same environment state by running an `ensure_requirements` check at the start of a script.
+*   **CI/CD & Automation Scripts:** Programmatically prepare a build environment, install testing tools, and deploy your application with reliable, repeatable Python code instead of brittle shell scripts.
+*   **Libraries and Frameworks:** Provide helper scripts for users to set up a correct environment, or use it internally to manage complex testing dependencies.
 
 ## Feature Overview
 
@@ -47,14 +59,11 @@ pip install pipmaster
 
 ### Optional Features
 
-`pipmaster` offers optional features that require extra dependencies. Install them as needed:
-
-*   **Vulnerability Auditing:** Enables the `check_vulnerabilities` function using `pip-audit`.
+*   **Vulnerability Auditing (`pip-audit`):**
     ```bash
     pip install pipmaster[audit]
     ```
-
-*   **Development Environment:** For contributing to `pipmaster`, this includes all tools for testing, linting, and building documentation.
+*   **Development Environment (for contributors):**
     ```bash
     git clone https://github.com/ParisNeo/pipmaster.git
     cd pipmaster
@@ -65,97 +74,102 @@ pip install pipmaster
     pip install pipmaster[all]
     ```
 
-## The Game-Changer: Ensuring Dependencies Automatically
+## The Core Concept: Declarative & Idempotent Management
 
-Forget manual setup instructions. The `ensure_*` methods are the heart of `pipmaster`, designed to be a game-changer for any Python application that needs to **just work out of the box**. By embedding dependency checks directly into your application's startup logic, you provide a seamless experience for your users. `pipmaster` programmatically verifies that all required packages are present and meet version specifications, installing or updating them only when necessary. This is the key to creating robust, self-sufficient applications that eliminate "dependency hell" for the end-user.
+The `ensure_*` methods are the heart of `pipmaster`. They are **idempotent**, meaning you can run them a thousand times, and they will only perform an action if the environment is out of sync with your declarations.
 
-These methods are **idempotent** and **efficient**. You can call them every time your application runs; they'll quickly check the environment and trigger a single, batch installation command only for the packages that are missing or outdated. This is far superior to manually running `pip install` commands.
+They are also **efficient**. `pipmaster` checks all requirements first, then triggers a *single, batch installation command* only for the packages that are missing or outdated. This is far superior to running multiple `pip install` commands in a loop.
 
-### Declarative Dependencies in Code with `ensure_packages`
+### `ensure_packages`: Define Dependencies Directly in Code
 
-For ultimate control, define dependencies directly in your Python code. This is perfect for applications or libraries that need to bundle their dependency logic. `ensure_packages` intelligently handles a single package string, a list of packages, or a dictionary for more complex versioning.
+This is the most powerful feature for creating self-contained applications. Define dependencies as a simple string, a list, or a dictionary.
 
 ```python
 import pipmaster as pm
 
-# 1. Ensure a SINGLE package is installed (using a string)
-print("--- Ensuring 'rich' is installed ---")
-pm.ensure_packages("rich", verbose=True)
+# 1. Simple: Ensure a single package is present
+pm.ensure_packages("rich")
 
-# 2. Ensure a LIST of packages are installed
-print("\n--- Ensuring a list of packages ---")
+# 2. List: Ensure multiple packages, with version specifiers
 pm.ensure_packages(["pandas", "numpy>=1.20"], verbose=True)
 
-# 3. Ensure a DICTIONARY of requirements are met
-print("\n--- Ensuring a dictionary of requirements ---")
+# 3. Dictionary: A clean way to manage a set of requirements
 requirements = {
     "requests": ">=2.25.0",
-    "tqdm": None  # We need it, but any installed version is fine
+    "tqdm": None  # Any version is acceptable
 }
-if pm.ensure_packages(requirements, verbose=True):
-    print("\nAll dictionary requirements are met!")
+pm.ensure_packages(requirements, verbose=True)
 ```
 
-### Effortless Syncing with `ensure_requirements`
+### `ensure_requirements`: Automate Your `requirements.txt` Workflow
 
-If you already use `requirements.txt` files, `ensure_requirements` is your one-line solution. `pipmaster` will parse the file—including advanced options like `--index-url` or `--extra-index-url`—and bring your environment into compliance. It's the perfect way to automate the standard `pip install -r requirements.txt` workflow.
+Use your existing `requirements.txt` files and let `pipmaster` handle the rest. It's the perfect one-line replacement for manual installation commands.
 
 ```python
 import pipmaster as pm
 
-# Assuming you have a 'requirements.txt' in your project root:
-# --extra-index-url https://custom-repo.org/simple
-# rich # For nice terminal output
-# pandas==2.1.0
-
-print("\n--- Ensuring dependencies from requirements.txt ---")
-# Create a dummy file for the example
+# Create a demo file
 with open("requirements-demo.txt", "w") as f:
     f.write("rich\n")
+    f.write("packaging>=21.0\n")
+
+# Ensure the environment matches the file
 if pm.ensure_requirements("requirements-demo.txt", verbose=True):
-    print("\nAll dependencies from file are met!")
+    print("\nEnvironment is in sync with requirements file!")
 ```
 
 ## Advanced Usage & Recipes
 
-### Recipe 1: Synchronous vs. Asynchronous API
+### Recipe 1: Conditional Installation from Git
 
-`pipmaster` provides a complete asynchronous API. Simply prefix function calls with `async_` and `await` them.
+Imagine you need cutting-edge features from a Git branch, but only if the user has an older version installed. `ensure_packages` handles this advanced logic with a special dictionary format.
+
+```python
+import pipmaster as pm
+
+# This rule says: "We need diffusers version 0.25.0 or newer. 
+# If the installed version doesn't meet this, install from the main branch on GitHub."
+conditional_requirement = {
+    "name": "diffusers",
+    "vcs": "git+https://github.com/huggingface/diffusers.git",
+    "condition": ">=0.25.0"
+}
+
+# First, let's install an old version to see it trigger
+pm.install("diffusers==0.24.0", verbose=True)
+
+print("\n--- Running ensure_packages with a conditional Git requirement ---")
+pm.ensure_packages([conditional_requirement], verbose=True)
+print(f"Post-check diffusers version: {pm.get_installed_version('diffusers')}")
+
+print("\n--- Running it again (should do nothing) ---")
+# Now that a newer version is installed, the condition is met, and pipmaster takes no action.
+pm.ensure_packages([conditional_requirement], verbose=True)
+
+```
+
+### Recipe 2: Synchronous vs. Asynchronous API
+
+Every core function has an `async` equivalent. Just prefix with `async_` and `await` the call.
 
 ```python
 import pipmaster as pm
 import asyncio
 
 # Synchronous call
-pm.ensure_packages("httpx")
+pm.install("httpx")
 
 # Asynchronous equivalent
 async def main():
-    await pm.async_ensure_packages("httpx")
-    # Also works with requirements files
-    # await pm.async_ensure_requirements("requirements.txt")
+    await pm.async_install("httpx")
+    await pm.async_ensure_requirements("requirements.txt")
 
-asyncio.run(main())
+# asyncio.run(main()) # Uncomment to run
 ```
 
-### Recipe 2: Using a Specific Backend (`pip` vs. `uv`)
+### Recipe 3: Using the `uv` Backend
 
-While module-level functions default to the current environment's `pip`, you can get a dedicated manager to control a specific backend or environment.
-
-#### `pip` Backend
-
-```python
-from pipmaster import get_pip_manager
-
-# Target a specific Python environment
-other_env_path = "/path/to/venv/bin/python" # Or "C:/path/to/venv/Scripts/python.exe"
-# pip_manager = get_pip_manager(python_executable=other_env_path)
-# pip_manager.install("requests")
-```
-
-#### `uv` Backend
-
-This requires `uv` to be installed and available on your system's PATH.
+Take advantage of `uv`'s incredible speed for creating environments and installing packages. This requires `uv` to be installed on your system's PATH.
 
 ```python
 from pipmaster import get_uv_manager
@@ -165,14 +179,18 @@ import shutil
 temp_env_path = "./my_uv_test_env"
 
 try:
+    # Get a manager that is NOT tied to the current environment
     uv_manager = get_uv_manager()
 
-    print(f"\n--- Creating new uv environment at {temp_env_path} ---")
+    # Create a new, empty venv
     if uv_manager.create_env(path=temp_env_path):
-        print("Environment created successfully.")
-        uv_manager.install("numpy")
-        print("Numpy installed in the new environment.")
+        print("uv environment created successfully.")
+        
+        # The manager now targets the new environment for all subsequent calls
+        uv_manager.install_multiple(["numpy", "pandas"], verbose=True)
+        print("Packages installed in the new environment.")
 
+    # Use uvx to run a tool in an ephemeral environment
     print("\n--- Running black --version with uv's tool runner ---")
     uv_manager.run_with_uvx(["black", "--version"], verbose=True)
 
@@ -183,59 +201,36 @@ finally:
         shutil.rmtree(temp_env_path)
 ```
 
-### Recipe 3: Inspecting the Environment
+### Recipe 4: Environment Inspection and Safety
 
-Check the status of packages without changing anything. These functions are synchronous as they rely on the fast `importlib.metadata` library.
-
-```python
-import pipmaster as pm
-
-if pm.is_installed("requests"):
-    print("Requests is installed.")
-
-if pm.is_installed("packaging", version_specifier=">=21.0"):
-    print("A compatible version of 'packaging' is installed.")
-
-numpy_version = pm.get_installed_version("numpy")
-if numpy_version:
-    print(f"Installed numpy version: {numpy_version}")
-
-package_info = pm.get_package_info("pipmaster")
-if package_info:
-    print("\n--- pipmaster info ---\n" + package_info)
-```
-
-### Recipe 4: Safety Features (Dry Run & Auditing)
-
-Preview changes and check for security vulnerabilities.
+Check packages without changing anything, and audit for security vulnerabilities.
 
 ```python
 import pipmaster as pm
 
-print("\n--- Dry Run Examples ---")
-pm.install("requests", dry_run=True, verbose=True)
-pm.ensure_packages({"numpy": ">=1.20"}, dry_run=True, verbose=True)
-pm.ensure_requirements("requirements-demo.txt", dry_run=True, verbose=True) # Using the file from before
+# --- Inspection (Fast, synchronous calls) ---
+if pm.is_installed("requests", version_specifier=">=2.20"):
+    print(f"Requests version {pm.get_installed_version('requests')} is compatible.")
 
-print("\n--- Vulnerability Check ---")
+# --- Safety: Dry Run ---
+print("\n--- Previewing changes with Dry Run ---")
+pm.ensure_packages({"numpy": "<1.20"}, dry_run=True, verbose=True)
+
+# --- Safety: Vulnerability Audit ---
+print("\n--- Checking for Vulnerabilities ---")
 try:
     vulnerabilities_found, report = pm.check_vulnerabilities()
     if vulnerabilities_found:
-        print("WARNING: Vulnerabilities found in environment!")
+        print("WARNING: Vulnerabilities found!")
     else:
-        print("No known vulnerabilities found.")
+        print("No known vulnerabilities found in the environment.")
 except FileNotFoundError:
     print("Skipping check: pip-audit not found. Install with 'pip install pipmaster[audit]'")
-
 ```
 
 ## Contributing
 
-Contributions are welcome! If you find a bug, have a feature request, or want to contribute code:
-
-1.  **Search Issues:** Check the GitHub Issues page to see if a similar issue or request already exists.
-2.  **Open an Issue:** If not, open a new issue describing the bug or feature.
-3.  **Fork & Pull Request:** For code contributions, please fork the repository, create a new branch for your changes, and submit a pull request. Ensure your code includes tests and follows the project's style guidelines.
+Contributions are welcome! If you find a bug, have a feature request, or want to contribute code, please check the GitHub Issues page before opening a new issue or submitting a pull request.
 
 ## License
 
