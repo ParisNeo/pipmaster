@@ -64,7 +64,7 @@ class PackageManager:
         if pip_command_base:
             self.pip_command_base = pip_command_base
             logger.info(f"Using custom pip command base: {' '.join(pip_command_base)}")
-            self._executable = pip_command_base[0]
+            self._executable = pip_command_base
 
         # 2. sinon priorité au venv_path
         elif venv_path:
@@ -116,17 +116,17 @@ class PackageManager:
         verbose: bool = False,
     ) -> Tuple[bool, str]:
         full_command_list = self.pip_command_base + command
-        log_command_list = [self.pip_command_base[0]] + self.pip_command_base[1:] + command
+        log_command_list = [self.pip_command_base] + self.pip_command_base[1:] + command
         command_str_for_log = " ".join(log_command_list)
 
         if dry_run:
-            if command[0] in ["install", "uninstall", "download"]:
+            if command in ["install", "uninstall", "download"]:
                 insert_pos = next((i for i, arg in enumerate(command) if i > 0 and not arg.startswith("-")), -1)
                 dry_run_command_list = (
                     self.pip_command_base + command[:insert_pos] + ["--dry-run"] + command[insert_pos:]
                     if insert_pos != -1 else self.pip_command_base + command + ["--dry-run"]
                 )
-                dry_run_cmd_str_for_log = " ".join([self.pip_command_base[0]] + dry_run_command_list[1:])
+                dry_run_cmd_str_for_log = " ".join([self.pip_command_base] + dry_run_command_list[1:])
                 logger.info(f"DRY RUN: Would execute: {dry_run_cmd_str_for_log}")
                 return True, f"Dry run: Command would be '{dry_run_cmd_str_for_log}'"
             else:
@@ -194,7 +194,7 @@ class PackageManager:
                 return False, error_message
 
         except FileNotFoundError:
-            error_message = f"Error: Command execution failed. Is '{self.pip_command_base[0]}' a valid executable path?"
+            error_message = f"Error: Command execution failed. Is '{self.pip_command_base}' a valid executable path?"
             logger.exception(error_message)
             return False, error_message
         except Exception as e:
@@ -783,10 +783,10 @@ class PackageManager:
             logger.exception(f"Failed to run pip-audit: {e}")
             return True, f"Error running pip-audit: {e}"  # Assume vulnerable on error
 
-    def _get_packages_to_process(self, requirements: Union[str, Dict[str, Optional[str]], List[str]], verbose: bool) -> List[str]:
+    def _get_packages_to_process(self, requirements: Union[str, Dict[str, Optional[str]], List[str]], always_update: bool, verbose: bool) -> List[str]:
         """
         Parses requirements and checks which packages need installation/update.
-        Internal helper for ensure_packages and async_ensure_packages.
+        Internal helper for ensure_packages.
         """
         if not requirements:
             return []
@@ -817,38 +817,63 @@ class PackageManager:
             package_name: str = ""
             effective_specifier: Optional[str] = None
             install_target_string: str = ""
+            is_vcs = False
 
             try:
                 if is_dict_input:
                     package_name, effective_specifier = item
-                    req_check = Requirement(package_name)
-                    if str(req_check.specifier):
-                        logger.warning(
-                            f"Specifier found in dictionary key '{package_name}'. It should be in the value. Using specifier from value: '{effective_specifier}'."
-                        )
-                    package_name = req_check.name
+                    # For dicts, we build the requirement string for parsing and installation
                     install_target_string = f"{package_name}{effective_specifier or ''}"
+                    req = Requirement(install_target_string)
+                    package_name = req.name
                 else:
                     package_input_str = item
-                    req = Requirement(package_input_str)
-                    package_name = req.name
-                    effective_specifier = str(req.specifier) or None
+                    # For list/str, the item is the full requirement string
                     install_target_string = package_input_str
+                    if "git+" in package_input_str:
+                        is_vcs = True
+                        # For VCS, we can't reliably parse the name without installing,
+                        # but we can try to extract it from #egg=...
+                        if "#egg=" in package_input_str:
+                            package_name = package_input_str.split("#egg=")[-1]
+                        else:
+                            # If no egg, we can't check if it's installed reliably by name.
+                            # We'll add it to the process list and let pip handle it.
+                            package_name = package_input_str 
+                    else:
+                        req = Requirement(package_input_str)
+                        package_name = req.name
+                        effective_specifier = str(req.specifier) or None
 
-                if not is_dict_input and package_name in processed_packages:
+                if package_name in processed_packages:
                     continue
                 processed_packages.add(package_name)
 
-                specifier_str = (
-                    f" (requires '{effective_specifier}')" if effective_specifier else ""
-                )
+                specifier_str = (f" (requires '{effective_specifier}')" if effective_specifier else "")
                 if verbose:
-                    logger.info(f"Checking requirement: '{package_name}'{specifier_str}")
+                    logger.info(f"Checking requirement: '{install_target_string}'")
 
-                if self.is_installed(
-                    package_name, version_specifier=effective_specifier
-                ):
-                    if verbose:
+                # Handle VCS (e.g., git) URLs
+                if is_vcs:
+                    if always_update:
+                        logger.info(f"VCS requirement '{install_target_string}' will be updated as always_update is True.")
+                        packages_to_process.append(install_target_string)
+                    else:
+                        # Without always_update, we can't easily check if the remote has changed.
+                        # A simple approach is to install if the package name isn't present.
+                        if package_name and not self.is_installed(package_name):
+                             logger.warning(f"VCS Requirement '{package_name}' not found. Adding to install list.")
+                             packages_to_process.append(install_target_string)
+                        elif verbose:
+                             logger.info(f"VCS requirement '{package_name or install_target_string}' is assumed to be installed and always_update is False.")
+                    continue
+
+                # Standard package checks
+                if self.is_installed(package_name, version_specifier=effective_specifier):
+                    if always_update and not effective_specifier:
+                        logger.info(f"'{package_name}' is installed, but always_update=True. Adding to update list.")
+                        packages_to_process.append(install_target_string)
+                    elif verbose:
                         logger.info(f"Requirement met for '{package_name}'{specifier_str}.")
                 else:
                     installed_version = self.get_installed_version(package_name)
@@ -874,14 +899,15 @@ class PackageManager:
 
     def ensure_packages(
         self,
-        requirements: Union[str, Dict[str, Optional[str]], List[str]], # Updated hint
+        requirements: Union[str, Dict[str, Optional[str]], List[str]],
+        always_update: bool = False,
         index_url: Optional[str] = None,
         extra_args: Optional[List[str]] = None,
         dry_run: bool = False,
         verbose: bool = False,
     ) -> bool:
         """
-        Ensures that required packages are installed and meet version requirements.
+        Ensures that required packages, including from GitHub, are installed and meet version requirements.
 
         This is the most efficient method for managing a set of dependencies, as it
         checks all requirements first and then performs a single 'pip install'
@@ -889,10 +915,12 @@ class PackageManager:
 
         Args:
             requirements (Union[str, Dict[str, Optional[str]], List[str]]):
-                - str: A single package requirement string (e.g., "requests>=2.25").
+                - str: A single package requirement string (e.g., "requests>=2.25", "git+https://github.com/user/repo.git").
                 - List[str]: A list of package requirement strings.
                 - Dict[str, Optional[str]]: A dictionary mapping package names to
-                  optional PEP 440 version specifiers.
+                  optional PEP 440 version specifiers. GitHub URLs are not supported in this format.
+            always_update (bool): If True, updates packages to the latest version if they
+                                 don't have a specific version pin (e.g., "package==1.2.3").
             index_url (str, optional): Custom index URL for installations.
             extra_args (List[str], optional): Additional arguments for the pip install command.
             dry_run (bool): If True, simulate installations without making changes.
@@ -912,10 +940,10 @@ class PackageManager:
             logger.info("ensure_packages called with empty requirements.")
             return True
 
-        packages_to_process = self._get_packages_to_process(requirements, verbose)
+        packages_to_process = self._get_packages_to_process(requirements, always_update, verbose)
 
         if not packages_to_process:
-            logger.debug("[success]All specified package requirements are already met.[/success]")
+            logger.info("All specified package requirements are already met.")
             return True
 
         # If we need to install/update packages
@@ -932,11 +960,11 @@ class PackageManager:
         success = self.install_multiple(
             packages=packages_to_process,
             index_url=index_url,
-            force_reinstall=False,
+            force_reinstall=False, # Let --upgrade handle it
             upgrade=True,  # Important to handle version updates/latest install
             extra_args=extra_args,
             dry_run=dry_run,
-            verbose=verbose,  # Pass verbose flag
+            verbose=verbose,
         )
 
         if dry_run and success:
@@ -950,7 +978,7 @@ class PackageManager:
         else:
             logger.error(
                 "Failed to install/update one or more required packages."
-            )  # Changed log level
+            )
             return False
 
         return True
@@ -958,31 +986,58 @@ class PackageManager:
     def ensure_requirements(
         self,
         requirements_file: str,
+        always_update: bool = False,
         dry_run: bool = False,
         verbose: bool = False,
     ) -> bool:
         """
-        Installs all packages listed in a requirements.txt file using pip's native -r option.
+        Ensures all packages from a requirements.txt file are installed, with an option to update.
+
+        This method parses a requirements file and uses the efficient `ensure_packages`
+        method to install any missing or outdated packages.
+
+        Args:
+            requirements_file (str): Path to the requirements.txt file.
+            always_update (bool): If True, updates packages to the latest version if they
+                                 are not explicitly pinned with '=='.
+            dry_run (bool): If True, simulate installations without making changes.
+            verbose (bool): If True, show detailed output during checks and installation.
+
+        Returns:
+            bool: True if all requirements were met or successfully installed, False otherwise.
         """
-        if not Path(requirements_file).exists():
+        req_path = Path(requirements_file)
+        if not req_path.exists():
             logger.error(f"Requirements file not found: {requirements_file}")
             return False
 
-        command = ["install", "-r", str(requirements_file)]
+        try:
+            with open(req_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Filter out comments and empty lines, and strip whitespace
+            requirements_list = [
+                line.strip() for line in lines 
+                if line.strip() and not line.strip().startswith('#')
+            ]
 
-        success, _ = self._run_command(
-            command, dry_run=dry_run, verbose=verbose, capture_output=not verbose
-        )
+            if not requirements_list:
+                logger.info(f"Requirements file '{requirements_file}' is empty or only contains comments.")
+                return True
 
-        if dry_run and success:
-            logger.info("Dry run successful. No changes were made.")
-        elif success:
-            logger.info(f"Successfully processed requirements from {requirements_file}.")
-        else:
-            logger.error(f"Failed to install requirements from {requirements_file}.")
+            logger.info(f"Processing {len(requirements_list)} requirements from '{requirements_file}'.")
+            
+            # Delegate to the powerful ensure_packages method
+            return self.ensure_packages(
+                requirements=requirements_list,
+                always_update=always_update,
+                dry_run=dry_run,
+                verbose=verbose
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to read or parse requirements file '{requirements_file}': {e}")
             return False
-
-        return True
 
 # --- Module-level Convenience Functions (using default PackageManager) ---
 _default_pm = PackageManager()
@@ -1480,11 +1535,12 @@ def check_vulnerabilities(
 
 
 def ensure_packages(
-    requirements: Union[str, Dict[str, Optional[str]], List[str]],  # Updated hint
+    requirements: Union[str, Dict[str, Optional[str]], List[str]],
+    always_update: bool = False,
     index_url: Optional[str] = None,
     extra_args: Optional[List[str]] = None,
     dry_run: bool = False,
-    verbose: bool = False,  # Added verbose
+    verbose: bool = False,
 ) -> bool:
     """
     Ensures packages meet requirements in the current environment using the default PackageManager.
@@ -1494,10 +1550,12 @@ def ensure_packages(
 
     Args:
         requirements (Union[str, Dict[str, Optional[str]], List[str]]):
-            Either a string (the package name), a dictionary mapping package names to optional PEP 440 version
-            specifiers (e.g., {"requests": ">=2.25", "numpy": None}) OR a list
-            of package strings (e.g., ["requests>=2.25", "numpy"]). If a list
-            item has no specifier, the latest version is assumed.
+            - str: A single package requirement string (e.g., "requests>=2.25", "git+https://github.com/user/repo.git").
+            - List[str]: A list of package requirement strings.
+            - Dict[str, Optional[str]]: A dictionary mapping package names to
+              optional PEP 440 version specifiers. GitHub URLs are not supported in this format.
+        always_update (bool): If True, updates packages to the latest version if they
+                             don't have a specific version pin (e.g., "package==1.2.3").
         index_url (str, optional): Custom index URL for installations.
         extra_args (List[str], optional): Additional arguments for the pip install command.
         dry_run (bool): If True, simulate installations without making changes.
@@ -1511,29 +1569,29 @@ def ensure_packages(
     """
     return _default_pm.ensure_packages(
         requirements=requirements,
+        always_update=always_update,
         index_url=index_url,
         extra_args=extra_args,
         dry_run=dry_run,
-        verbose=verbose,  # Pass verbose
+        verbose=verbose,
     )
 
 def ensure_requirements(
     requirements_file: str,
+    always_update: bool = False,
     dry_run: bool = False,
     verbose: bool = False,
 ) -> bool:
     """
     Ensures that all packages from a requirements.txt file are installed.
 
-    This method parses a requirements file, respecting comments and some pip
-    options like --index-url or --extra-index-url, and then uses the efficient
+    This method parses a requirements file and uses the efficient
     `ensure_packages` method to install any missing or outdated packages.
-
-    Note: Does not support recursive '-r' includes or editable '-e' installs from
-    within the file. For editable installs, use `install_edit()`.
 
     Args:
         requirements_file (str): Path to the requirements.txt file.
+        always_update (bool): If True, updates packages to the latest version if they
+                             are not explicitly pinned with '=='.
         dry_run (bool): If True, simulate installations without making changes.
         verbose (bool): If True, show detailed output during checks and installation.
 
@@ -1544,6 +1602,7 @@ def ensure_requirements(
     """
     return _default_pm.ensure_requirements(
         requirements_file=requirements_file,
+        always_update=always_update,
         dry_run=dry_run,
         verbose=verbose,
     )
