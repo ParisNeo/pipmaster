@@ -1036,7 +1036,7 @@ class PackageManager:
         packages_to_process = self._get_packages_to_process(requirements, always_update, verbose)
 
         if not packages_to_process:
-            logger.info("All specified package requirements are already met.")
+            logger.debug("All specified package requirements are already met.")
             return True
 
         # If we need to install/update packages
@@ -1045,7 +1045,7 @@ class PackageManager:
             f"Found {len(packages_to_process)} packages requiring installation/update: '{package_list_str}'"
         )
         if dry_run:
-            logger.info("Dry run enabled. Simulating installation...")
+            logger.debug("Dry run enabled. Simulating installation...")
         else:
             logger.info("Running installation/update command...")
 
