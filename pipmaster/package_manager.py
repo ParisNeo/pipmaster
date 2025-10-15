@@ -580,16 +580,23 @@ class PackageManager:
                     capture_output=True,
                     text=True,
                     check=False,  # Don't raise an exception on non-zero exit codes
+                    encoding=locale.getpreferredencoding(False),
+                    errors="replace"
                 )
 
                 # If the command was successful, return the stripped output
                 if result.returncode == 0:
                     return result.stdout.strip()
                 else:
-                    # Log the error if the command failed
-                    if result.stderr:
+                    # FIX: Check if the error is an expected "PackageNotFoundError"
+                    stderr_output = result.stderr.strip() if result.stderr else ""
+                    if "PackageNotFoundError" in stderr_output:
+                        # This is expected if the package isn't installed. Don't log as an error.
+                        logger.debug(f"Package '{package_name}' not found in target environment. This is expected before installation.")
+                    elif stderr_output:
+                        # Log a real error if stderr contains something else
                         logger.error(
-                            f"Error getting version for '{package_name}' in target environment ({self.target_python_executable}):\n{result.stderr.strip()}"
+                            f"Error getting version for '{package_name}' in target environment ({self.target_python_executable}):\n{stderr_output}"
                         )
                     return None
         except importlib.metadata.PackageNotFoundError:
