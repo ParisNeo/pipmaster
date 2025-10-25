@@ -2,10 +2,93 @@
 Installing Packages
 ********************
 
-`pipmaster` provides several functions for installing packages programmatically.
+`pipmaster` provides several functions for installing packages programmatically. For managing a set of dependencies for an application, the `ensure_*` methods are the most powerful and recommended approach.
+
+The `ensure_*` Philosophy
+=========================
+The `ensure_packages` and `ensure_requirements` functions are **idempotent**. This means you can run them repeatedly, and they will only perform an action if the environment's state does not match your declared requirements.
+
+They are also **efficient**. They first check all packages, then run a single `pip install` command for only the packages that are missing or need updating. This is much faster than running `pip install` in a loop.
+
+Ensuring Dependencies with `ensure_packages`
+--------------------------------------------
+This is the recommended way to manage dependencies directly within your code, creating self-contained and self-validating applications. It accepts a string, a list of strings, or a dictionary.
+
+.. code-block:: python
+   
+   import pipmaster as pm
+
+   # 1. Ensure a single package is present (any version)
+   pm.ensure_packages("rich", verbose=True)
+
+   # 2. Ensure a list of packages with version specifiers
+   pm.ensure_packages(["pandas", "numpy>=1.20"], verbose=True)
+
+   # 3. Ensure dependencies from a dictionary
+   requirements = {
+       "requests": ">=2.25.0",
+       "tqdm": None  # Any version is acceptable
+   }
+   pm.ensure_packages(requirements, verbose=True)
+
+   # 4. Force update for packages without a version pin
+   # This will update 'tqdm' to the latest version but respect the 'requests' specifier.
+   pm.ensure_packages(requirements, always_update=True, verbose=True)
+
+
+**Advanced: Conditional Git Installation**
+
+You can define a rule to install a package from a Git repository *only if* the currently installed version doesn't meet a specific condition. This is useful for requiring cutting-edge features from a development branch.
+
+.. code-block:: python
+
+   # This rule means: "We need diffusers>=0.25.0. 
+   # If not met, install from the main branch on GitHub."
+   conditional_req = {
+       "name": "diffusers",
+       "vcs": "git+https://github.com/huggingface/diffusers.git",
+       "condition": ">=0.25.0"
+   }
+
+   # This will trigger the git install if an older version is present
+   pm.ensure_packages([conditional_req], verbose=True)
+
+
+Ensuring Dependencies from a File with `ensure_requirements`
+-------------------------------------------------------------
+This function provides a programmatic and idempotent way to sync your environment with a `requirements.txt` file.
+
+.. code-block:: python
+   :caption: requirements.txt
+
+   --extra-index-url https://download.pytorch.org/whl/cu121
+   torch
+   # A comment
+   rich ; python_version >= '3.8'
+
+.. code-block:: python
+
+   import pipmaster as pm
+
+   # Create the file for the example
+   with open("requirements.txt", "w") as f:
+       f.write("--extra-index-url https://download.pytorch.org/whl/cu121\n")
+       f.write("torch\n")
+       f.write("rich ; python_version >= '3.8'\n")
+
+   # This single command ensures the environment matches the file.
+   # It handles the index-url option and installs only what's needed.
+   if pm.ensure_requirements("requirements.txt", verbose=True):
+       print("Environment is now in sync with requirements.txt!")
+
+
+Legacy Installation Methods
+===========================
+
+While the `ensure_*` methods are preferred, `pipmaster` also provides direct wrappers around `pip install` commands for simpler, one-off tasks.
 
 Basic Installation
-==================
+------------------
 Use :func:`~pipmaster.package_manager.install` to install a single package. By default, it acts like `pip install --upgrade`, installing the package if missing or upgrading it if already present.
 
 .. code-block:: python
@@ -74,15 +157,7 @@ Use :func:`~pipmaster.package_manager.install_if_missing` to install a package o
 
 Installing from Requirements Files
 ==================================
-Use :func:`~pipmaster.package_manager.install_requirements` to install all packages listed in a standard `requirements.txt` file.
-
-.. code-block:: python
-   :caption: requirements.txt
-
-   click>=8.0
-   flask
-   # This is a comment
-   rich ; python_version >= '3.6'
+Use :func:`~pipmaster.package_manager.install_requirements` to install all packages listed in a standard `requirements.txt` file. This is a direct wrapper around `pip install -r`. For idempotent checks, use `ensure_requirements` instead.
 
 .. code-block:: python
 

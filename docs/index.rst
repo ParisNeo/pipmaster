@@ -22,15 +22,15 @@ Whether you're building application setup routines, automating testing environme
 **Key Features:**
 
 *   ✅ **Programmatic Control:** A clear Python interface for `pip` operations.
-*   🎯 **Environment Targeting:** Manage packages in any specified Python environment.
-*   🔄 **Flexible Installation:** Handle single/multiple packages, specific versions, requirements files, and editable installs.
-*   🔍 **Conditional Logic:** Install packages only if missing or if version requirements aren't met (:py:func:`~pipmaster.package_manager.install_if_missing`).
+*   🚀 **`uv` Backend Support:** Leverage the high-speed `uv` installer for creating environments and managing packages.
+*   🎯 **Environment Targeting:** Manage packages in any specified Python environment, with automatic venv creation.
+*   🔄 **Idempotent Management:** Use `ensure_packages` and `ensure_requirements` to declare the desired state, and let `pipmaster` handle the rest efficiently.
+*   🔍 **Conditional Logic:** Install packages only if missing or if version requirements aren't met (:py:func:`~pipmaster.package_manager.install_if_missing`), with advanced support for conditional VCS installs.
 *   ⚙️ **Status Checks:** Reliably check if packages are installed (:py:func:`~pipmaster.package_manager.is_installed`), get versions (:py:func:`~pipmaster.package_manager.get_installed_version`), and verify version compatibility (:py:func:`~pipmaster.package_manager.is_version_compatible`).
 *   🛡️ **Vulnerability Scanning:** Integrate `pip-audit` checks into your workflows (:py:func:`~pipmaster.package_manager.check_vulnerabilities`).
 *   ⚡ **Asynchronous API:** Non-blocking operations for async applications (:py:mod:`pipmaster.async_package_manager`).
 *   🧪 **Dry Run Mode:** Simulate commands without making changes to the environment.
-*   🚀 **Modern & Robust:** Uses standard libraries like ``importlib.metadata`` and ``packaging``.
-*   🧩 **Extensible:** Designed with future support for other backends (like `uv`, `conda`) in mind.
+*   🧩 **Extensible:** Designed with future support for other backends (like `conda`) in mind.
 
 **Core Use Cases:**
 

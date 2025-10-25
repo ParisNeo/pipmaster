@@ -13,3 +13,4 @@ User Guide
    vulnerabilities
    async
    dry_run
+   uv

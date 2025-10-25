@@ -7,6 +7,23 @@ All notable changes to this project will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[1.0.9] - 2025-10-25
+====================
+
+Added
+-----
+*   **`uv` Backend (Experimental)**: Added `UvPackageManager` to interact with `uv`. It supports creating virtual environments, installing/uninstalling packages, and running ephemeral tools with `uv tool run` (`uvx`). Accessible via `get_uv_manager`.
+*   **`ensure_requirements` Function**: New synchronous (`ensure_requirements`) and asynchronous (`async_ensure_requirements`) functions to idempotently install dependencies from a `requirements.txt` file. It intelligently parses the file, handles `pip` options, and only installs what's missing or outdated.
+*   **Automatic Venv Creation**: The `PackageManager` can now automatically create a virtual environment if the `venv_path` provided during initialization does not exist.
+*   **`get_current_package_version` Alias**: Added as a more explicit alias for `get_installed_version`.
+*   **Verbose Output Control**: Added a `verbose` parameter to most installation and uninstallation functions to allow streaming `pip` output directly to the console for better debugging.
+
+Changed
+-------
+*   **`ensure_packages` Enhancement**: Now supports an advanced dictionary format for conditional VCS (Git) installations, allowing installation from a repository only if a specific version requirement is not met.
+*   **Improved Command Execution**: The internal `_run_command` method in `PackageManager` has been improved with better cross-platform command quoting, encoding handling (forcing UTF-8), and more detailed error logging.
+*   **Asynchronous Command Execution**: `AsyncPackageManager._run_command` now supports verbose output streaming and has been made more robust.
+
 [0.7.1] - 2025-04-29
 ====================
 

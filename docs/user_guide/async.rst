@@ -14,8 +14,13 @@ Functions that involve running external commands (`pip`, `pip-audit`) have async
 
 *   :func:`~pipmaster.async_package_manager.async_install`
 *   :func:`~pipmaster.async_package_manager.async_install_if_missing`
+*   :func:`~pipmaster.async_package_manager.async_install_multiple`
+*   :func:`~pipmaster.async_package_manager.async_ensure_packages`
+*   :func:`~pipmaster.async_package_manager.async_ensure_requirements`
+*   :func:`~pipmaster.async_package_manager.async_uninstall`
+*   :func:`~pipmaster.async_package_manager.async_uninstall_multiple`
 *   :func:`~pipmaster.async_package_manager.async_check_vulnerabilities`
-*   *(Others like `async_uninstall`, `async_install_multiple` would follow the same pattern if implemented)*
+*   :func:`~pipmaster.async_package_manager.async_get_package_info`
 
 Functions that rely purely on synchronous libraries like `importlib.metadata` (:func:`~pipmaster.package_manager.is_installed`, :func:`~pipmaster.package_manager.get_installed_version`, :func:`~pipmaster.package_manager.is_version_compatible`) **do not** have direct async versions. See :ref:`async-sync-checks` below.
 
@@ -30,14 +35,14 @@ Basic Async Usage
    async def main():
        print("Starting async package management...")
 
-       # Install a package asynchronously
-       pkg_to_install = "httpx"
-       print(f"Attempting async install of '{pkg_to_install}'...")
-       success = await pm.async_install(pkg_to_install)
-       if success:
-           print(f"'{pkg_to_install}' installed/updated asynchronously.")
-       else:
-           print(f"Failed to install '{pkg_to_install}' asynchronously.")
+       # Ensure requirements from a file asynchronously
+       # First, create a dummy file
+       with open("async_reqs.txt", "w") as f:
+           f.write("httpx\n")
+           f.write("rich\n")
+
+       print("Ensuring requirements from file asynchronously...")
+       await pm.async_ensure_requirements("async_reqs.txt", verbose=True)
 
        # Check vulnerabilities asynchronously
        print("\nRunning async vulnerability check...")

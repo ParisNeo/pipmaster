@@ -73,9 +73,41 @@ To target a different environment, you need the path to that environment's Pytho
        # except FileNotFoundError:
        #    # Handle error
 
+
+Automatic Environment Creation
+==============================
+When creating a `PackageManager` instance, you can provide a path to a virtual environment directory using the `venv_path` argument. If the environment does not exist at that path, `pipmaster` will automatically create it for you.
+
+.. code-block:: python
+
+   from pipmaster import PackageManager
+   import os
+   import shutil
+
+   # Path for our new environment
+   new_venv_path = "./my_new_test_venv"
+
+   # Clean up from previous runs if it exists
+   if os.path.exists(new_venv_path):
+       shutil.rmtree(new_venv_path)
+
+   print(f"Attempting to create and use a venv at: {new_venv_path}")
+   
+   # This will create the venv because it doesn't exist
+   venv_pm = PackageManager(venv_path=new_venv_path)
+
+   print(f"PackageManager is now targeting: {venv_pm.target_python_executable}")
+
+   # Install a package into the newly created environment
+   venv_pm.install("rich", verbose=True)
+
+   # Clean up the created environment
+   shutil.rmtree(new_venv_path)
+
+
 How it Works
 ============
-When a `python_executable` is provided, `pipmaster` constructs the `pip` command like this:
+When a `python_executable` or `venv_path` is provided, `pipmaster` constructs the `pip` command like this:
 
 .. code-block:: bash
 
@@ -85,6 +117,6 @@ This ensures that `pip` operations (install, uninstall, show, etc.) are executed
 
 Considerations
 ==============
-*   **Path Existence:** Ensure the path provided to `python_executable` is correct and points to a valid Python interpreter.
+*   **Path Existence:** Ensure the path provided to `python_executable` is correct and points to a valid Python interpreter. If using `venv_path`, the parent directory must be writable.
 *   **Permissions:** The script running `pipmaster` needs appropriate permissions to execute the target Python interpreter and modify its site-packages directory.
-*   **`pip` Availability:** The target environment must have `pip` installed and accessible via `python -m pip`.
+*   **`pip` Availability:** The target environment must have `pip` installed and accessible via `python -m pip`. This is handled automatically when creating a venv with `pipmaster`.

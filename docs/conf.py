@@ -16,7 +16,7 @@ try:
 except ImportError:
     # Fallback if package not installed or during early build stages
     # Read from pyproject.toml or hardcode temporarily if necessary
-    release = '0.7.0' # Ensure this matches your intended release
+    release = '1.0.9' # Ensure this matches your intended release
 
 version = '.'.join(release.split('.')[:2]) # The short X.Y version
 
