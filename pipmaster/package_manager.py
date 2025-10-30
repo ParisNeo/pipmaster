@@ -210,6 +210,11 @@ class PackageManager:
                         error_message += f"\n--- stderr ---\n{error_out.strip()}"
                 else:
                     error_message += "\nCheck console output for details."
+
+                permission_errors = ["permission denied", "access is denied", "[winerror 5]"]
+                if any(p_error in error_out.lower() for p_error in permission_errors):
+                    self._show_manual_command_message(full_command_list)
+
                 logger.error(error_message)
                 return False, error_message
 
@@ -218,9 +223,37 @@ class PackageManager:
             logger.exception(error_message)
             return False, error_message
         except Exception as e:
-            error_message = f"An unexpected error occurred while running command '{command_str_for_log}': {e}"
-            logger.exception(error_message)
-            return False, error_message
+            if "denied" in str(e).lower():
+                error_message = f"Permission Denied while executing command: {command_str_for_log}"
+                logger.exception(error_message)
+                self._show_manual_command_message(full_command_list)
+                return False, error_message
+            else:
+                error_message = f"An unexpected error occurred while running command '{command_str_for_log}': {e}"
+                logger.exception(error_message)
+                return False, error_message
+
+    def _show_manual_command_message(self, command: List[str]):
+        """
+        Displays a user-friendly message asking to run a command manually with elevated privileges.
+        """
+        command_str = " ".join(command)
+        
+        from ascii_colors import ASCIIColors
+        
+        ASCIIColors.orange("="*80)
+        ASCIIColors.bold("                    PIPMASTER - MANUAL ACTION REQUIRED")
+        ASCIIColors.orange("="*80)
+        ASCIIColors.cyan("\nPipmaster encountered a 'Permission Denied' error.")
+        ASCIIColors.print("This is often caused by an antivirus program or insufficient user privileges.")
+        
+        if platform.system() == "Windows":
+            ASCIIColors.multicolor(["\nPlease open an ", "Administrator Command Prompt or PowerShell"," and run the following command:"],[ ASCIIColors.color_white, ASCIIColors.style_bold, ASCIIColors.color_white])
+        else:
+            ASCIIColors.multicolor(["\nPlease open a terminal and run the following command, possibly with ", "sudo", ":"],[ ASCIIColors.color_white, ASCIIColors.style_bold, ASCIIColors.color_white])
+            
+        ASCIIColors.multicolor(["\n" + " "*4, f" {command_str} ", "\n"],[ ASCIIColors.color_white, ASCIIColors.style_bold, ASCIIColors.color_white])
+        ASCIIColors.orange("="*80)
 
 
     # --- Core Package Methods ---
