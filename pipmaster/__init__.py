@@ -10,16 +10,20 @@ Last Updated: 24/04/2025
 """
 
 # Read version dynamically
-__version__ = "1.0.10"
+__version__ = "1.1.0"
 
 # --- Synchronous API ---
 from .package_manager import (
     PackageManager,
+    PythonVersionManager,          # New native Python version manager
     UvPackageManager,
     CondaPackageManager,
     get_pip_manager,
     get_uv_manager,
     get_conda_manager,
+    get_pip_manager_for_version,   # Factory for portable Python environments
+    remove_venv,                   # New: Remove virtual environment
+    clear_portable_python_cache,   # New: Clear downloaded python versions
     install,
     install_if_missing,
     install_edit,
@@ -61,11 +65,15 @@ from .async_package_manager import (
 __all__ = [
     # Synchronous Classes & Factories
     "PackageManager",
+    "PythonVersionManager",          # Exported new manager
     "UvPackageManager",
     "CondaPackageManager",
     "get_pip_manager",
     "get_uv_manager",
     "get_conda_manager",
+    "get_pip_manager_for_version",  # Exported new factory
+    "remove_venv",                  # Exported
+    "clear_portable_python_cache",  # Exported
 
     # Synchronous Core Functions
     "ensure_packages",

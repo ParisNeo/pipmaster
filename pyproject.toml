@@ -32,6 +32,9 @@ dependencies = [
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 
+[project.scripts]
+pipmaster = "pipmaster.cli.main:main"
+
 [project.optional-dependencies]
 audit = ["pip-audit>=2.5.0"]
 dev = [

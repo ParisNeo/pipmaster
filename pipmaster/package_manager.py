@@ -24,6 +24,11 @@ from typing import Optional, List, Tuple, Union, Dict, Any
 
 import os
 import locale
+import urllib.request
+import urllib.error
+import tarfile
+import zipfile
+import tempfile
 
 
 # Setup basic logging
@@ -60,13 +65,13 @@ class PackageManager:
         """
         self._executable = None
         
-        # 1. priorité à pip_command_base
+        # 1. prioritÃ© Ã  pip_command_base
         if pip_command_base:
             self.pip_command_base = pip_command_base
             logger.info(f"Using custom pip command base: {' '.join(pip_command_base)}")
             self._executable = pip_command_base[0]
 
-        # 2. sinon priorité au venv_path
+        # 2. sinon prioritÃ© au venv_path
         elif venv_path:
             venv_path = Path(venv_path).resolve()
             if os.name == "nt":
@@ -74,7 +79,7 @@ class PackageManager:
             else:
                 venv_python = venv_path / "bin" / "python"
 
-            # créer si manquant
+            # crÃ©er si manquant
             if not venv_python.exists():
                 base_python = python_executable or sys.executable
                 logger.info(
@@ -156,7 +161,7 @@ class PackageManager:
         logger.info(f"Executing: {command_str_for_log}")
 
         try:
-            # Détection automatique de l’encodage système
+            # Auto detect system encoding
             encoding = locale.getpreferredencoding(False)
 
             # Forcer UTF-8 si possible (Python >=3.7)
@@ -1218,6 +1223,42 @@ def get_pip_manager(python_executable: Optional[str] = None) -> PackageManager:
     return _default_pm
 
 
+def remove_venv(venv_path: str) -> bool:
+    """
+    Safely removes a virtual environment directory.
+    
+    Checks for the existence of 'pyvenv.cfg' to ensure the target is likely
+    a virtual environment before deletion, preventing accidental data loss.
+
+    Args:
+        venv_path (str): The path to the virtual environment directory.
+
+    Returns:
+        bool: True if removed successfully or didn't exist, False on failure or safety check.
+    """
+    path = Path(venv_path).resolve()
+    
+    if not path.exists():
+        logger.info(f"Virtual environment not found at {path}, nothing to remove.")
+        return True
+    
+    # Safety check
+    if not (path / "pyvenv.cfg").exists():
+        logger.warning(
+            f"Safety check failed: '{path}' does not contain 'pyvenv.cfg'. "
+            "Aborting deletion to prevent accidental data loss of non-venv directories."
+        )
+        return False
+
+    try:
+        shutil.rmtree(path)
+        logger.info(f"Virtual environment at {path} successfully removed.")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to remove virtual environment at {path}: {e}")
+        return False
+
+
 # --- Wrapped Methods ---
 
 
@@ -1778,8 +1819,253 @@ def is_version_exact(package_name: str, required_version: str) -> bool:
     return _default_pm.is_version_compatible(package_name, f"=={required_version}")
 
 
+# --- PORTABLE PYTHON MANAGER (NATIVE) ---
+
+def clear_portable_python_cache() -> bool:
+    """
+    Clears the entire cache of downloaded portable Python versions.
+    Deletes the contents of ~/.pipmaster/python_versions.
+
+    Returns:
+        bool: True if successful, False on failure.
+    """
+    return PythonVersionManager().clear_cache()
+
+class PythonVersionManager:
+    """
+    Manages portable Python versions natively by downloading and extracting
+    pre-compiled standalone builds (via indygreg/python-build-standalone).
+    Does NOT require 'uv' or other external tools.
+    """
+    
+    # Base URL for a stable release of python-build-standalone. 
+    # Using 20251217 release tag.
+    BASE_URL_TEMPLATE = "https://github.com/astral-sh/python-build-standalone/releases/download/20251217/cpython-{version}+20251217-{arch}-{os}-install_only.tar.gz"
+    
+    # Mapping for the 20251217 release
+    VERSION_MAP = {
+        "3.10": "3.10.19",
+        "3.11": "3.11.14",
+        "3.12": "3.12.12",
+        "3.13": "3.13.10",
+        "3.14": "3.14.1",
+        "3.9": "3.9.24"
+    }
+
+    def __init__(self):
+        self.base_dir = Path.home() / ".pipmaster" / "python_versions"
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+
+    def _get_platform_info(self) -> Tuple[str, str]:
+        """Returns (arch, os) strings suitable for the build URL."""
+        machine = platform.machine().lower()
+        system = platform.system().lower()
+
+        # Architecture mapping
+        if machine in ["x86_64", "amd64"]:
+            arch = "x86_64"
+        elif machine in ["aarch64", "arm64"]:
+            arch = "aarch64"
+        elif machine in ["i386", "i686", "x86"]:
+            arch = "i686"
+        else:
+            raise RuntimeError(f"Unsupported architecture: {machine}")
+
+        # OS mapping and suffix
+        if system == "linux":
+            os_str = "unknown-linux-gnu"
+        elif system == "darwin": # MacOS
+            os_str = "apple-darwin"
+        elif system == "windows":
+            os_str = "pc-windows-msvc" # Changed from pc-windows-msvc-shared
+        else:
+            raise RuntimeError(f"Unsupported OS: {system}")
+
+        return arch, os_str
+
+    def _get_download_url(self, version: str) -> str:
+        """Constructs the download URL for the requested version and current platform."""
+        arch, os_str = self._get_platform_info()
+        return self.BASE_URL_TEMPLATE.format(version=version, arch=arch, os=os_str)
+    
+    def _resolve_version(self, version: str) -> str:
+        """Resolves a short version string (e.g. '3.10') to the full version in the map."""
+        return self.VERSION_MAP.get(version, version)
+
+    def install_version(self, version: str) -> bool:
+        """
+        Downloads and installs a specific Python version (e.g., '3.12.9').
+        
+        Args:
+            version (str): The specific Python version to install (e.g., "3.12.9").
+                           Note: Must be a full version string available in the release.
+            
+        Returns:
+            bool: True if successful or already installed.
+        """
+        target_version = self._resolve_version(version)
+        install_dir = self.base_dir / target_version
+        
+        if install_dir.exists():
+            # Check if it looks valid (has python executable)
+            if self._find_python_in_dir(install_dir):
+                logger.info(f"Python {target_version} is already installed at {install_dir}")
+                return True
+            else:
+                logger.warning(f"Found directory for {target_version} but it seems corrupt. Re-installing.")
+                shutil.rmtree(install_dir)
+
+        url = self._get_download_url(target_version)
+        logger.info(f"Downloading Python {target_version} from {url}...")
+        
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".tar.gz") as tmp_file:
+                # Add User-Agent header to avoid 403 Forbidden from GitHub
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'pipmaster-installer/1.0'}
+                )
+                try:
+                    with urllib.request.urlopen(req) as response:
+                        shutil.copyfileobj(response, tmp_file)
+                except urllib.error.HTTPError as e:
+                    logger.error(f"HTTP Error downloading Python: {e.code} {e.reason}")
+                    logger.error(f"URL Attempted: {url}")
+                    return False
+                except Exception as e:
+                    logger.error(f"Failed to download from {url}: {e}")
+                    return False
+                tmp_path = Path(tmp_file.name)
+
+            logger.info("Extracting...")
+            try:
+                # Extract to a temporary directory first
+                with tempfile.TemporaryDirectory() as extract_tmp:
+                    if url.endswith(".zip"):
+                         with zipfile.ZipFile(tmp_path, 'r') as zip_ref:
+                            zip_ref.extractall(extract_tmp)
+                    else:
+                        with tarfile.open(tmp_path, "r:*") as tar:
+                            tar.extractall(extract_tmp)
+                    
+                    # The archive usually contains a 'python' folder.
+                    # We move that content to our final install_dir.
+                    extracted_root = Path(extract_tmp)
+                    # Find the 'python' directory inside
+                    content_dir = extracted_root / "python"
+                    if not content_dir.exists():
+                        # Fallback: maybe it extracted directly?
+                        content_dir = extracted_root
+                    
+                    # Ensure parent exists
+                    install_dir.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Ensure target doesn't exist (it shouldn't, but for safety on Windows)
+                    if install_dir.exists():
+                         shutil.rmtree(install_dir, ignore_errors=True)
+
+                    shutil.move(str(content_dir), str(install_dir))
+                    
+            finally:
+                if tmp_path.exists():
+                    try:
+                        tmp_path.unlink()
+                    except Exception:
+                        pass # Ignore cleanup errors on Windows temp files if locked
+            
+            logger.info(f"Python {target_version} installed successfully.")
+            return True
+
+        except Exception as e:
+            logger.error(f"Installation failed for {target_version}: {e}")
+            if install_dir.exists():
+                shutil.rmtree(install_dir, ignore_errors=True)
+            return False
+
+    def remove_version(self, version: str) -> bool:
+        """
+        Removes a specific portable Python version from the cache.
+
+        Args:
+            version (str): The version to remove (e.g., "3.12" or "3.12.12").
+        
+        Returns:
+            bool: True if removed or didn't exist, False on error.
+        """
+        target_version = self._resolve_version(version)
+        install_dir = self.base_dir / target_version
+
+        if not install_dir.exists():
+            logger.info(f"Portable Python {target_version} not found in cache.")
+            return True
+
+        try:
+            shutil.rmtree(install_dir)
+            logger.info(f"Portable Python {target_version} removed from cache.")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to remove Python {target_version}: {e}")
+            return False
+
+    def clear_cache(self) -> bool:
+        """
+        Clears the entire cache of downloaded portable Python versions.
+        
+        Returns:
+            bool: True if successful, False on failure.
+        """
+        if not self.base_dir.exists():
+            return True
+            
+        try:
+            shutil.rmtree(self.base_dir)
+            self.base_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("Portable Python cache cleared successfully.")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to clear portable Python cache: {e}")
+            return False
+
+    def _find_python_in_dir(self, directory: Path) -> Optional[str]:
+        """Finds the python executable inside a directory."""
+        if platform.system() == "Windows":
+            candidates = [directory / "python.exe", directory / "Scripts" / "python.exe"]
+        else:
+            candidates = [directory / "bin" / "python3", directory / "bin" / "python"]
+            
+        for cand in candidates:
+            if cand.exists():
+                # On Windows, os.access(X_OK) can be unreliable.
+                if platform.system() != "Windows" and not os.access(cand, os.X_OK):
+                     continue
+                return str(cand)
+        
+        return None
+
+    def get_executable_path(self, version: str, auto_install: bool = True) -> Optional[str]:
+        """
+        Finds the executable path for a specific Python version.
+        
+        Args:
+            version (str): The Python version (e.g., "3.12" or "3.12.9").
+            auto_install (bool): If True, attempts to download if missing.
+        """
+        target_version = self._resolve_version(version)
+        install_dir = self.base_dir / target_version
+        
+        exe = self._find_python_in_dir(install_dir)
+        if exe:
+            return exe
+            
+        if auto_install:
+            logger.info(f"Portable Python {target_version} not found locally. Installing...")
+            if self.install_version(version):
+                return self._find_python_in_dir(install_dir)
+        
+        return None
+
+
 # --- UV / Conda Backends ---
-# In pipmaster/package_manager.py
 
 class UvPackageManager:
     """
@@ -1989,3 +2275,38 @@ def get_conda_manager(environment_name_or_path: Optional[str] = None) -> Any:
     """Gets a Conda Package Manager instance (Not Implemented)."""
     logger.warning("get_conda_manager is not yet implemented.")
     raise NotImplementedError("Conda backend support is not yet implemented.")
+
+def get_pip_manager_for_version(target_python_version: str, venv_path: str) -> PackageManager:
+    """
+    Creates a PackageManager that targets a specific Python version.
+    
+    This function checks if the requested portable Python version (e.g., "3.12")
+    is available locally. If not, it downloads it using the built-in native
+    downloader (from indygreg/python-build-standalone).
+    
+    It then creates or uses a virtual environment at 'venv_path' using that
+    specific Python executable.
+
+    Args:
+        target_python_version (str): The Python version to use (e.g., "3.10", "3.12").
+        venv_path (str): The path where the virtual environment should be created.
+
+    Returns:
+        PackageManager: A manager instance for the requested Python environment.
+        
+    Raises:
+        RuntimeError: If the Python version cannot be found or installed.
+    """
+    pvm = PythonVersionManager()
+    
+    # Get executable (auto-installing if missing)
+    python_exe = pvm.get_executable_path(target_python_version, auto_install=True)
+    
+    if not python_exe:
+        raise RuntimeError(f"Could not find or install portable Python version {target_python_version}. Check logs for download errors.")
+    
+    logger.info(f"Using portable Python {target_python_version} at: {python_exe}")
+    
+    # Initialize PackageManager
+    # The PackageManager will handle venv creation using this executable if venv_path doesn't exist.
+    return PackageManager(python_executable=python_exe, venv_path=venv_path)

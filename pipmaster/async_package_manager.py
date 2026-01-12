@@ -19,7 +19,7 @@ import shutil
 import shlex
 from typing import Optional, List, Tuple, Union, Dict, Any
 
-from .package_manager import PackageManager, Requirement
+from .package_manager import PackageManager, Requirement, get_pip_manager_for_version
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +33,18 @@ class AsyncPackageManager:
         self,
         python_executable: Optional[str] = None,
         pip_command_base: Optional[List[str]] = None,
+        venv_path: Optional[str] = None,
     ):
-        """Initializes the AsyncPackageManager."""
-        # Reuse sync init logic to determine command base
-        sync_pm = PackageManager(python_executable, pip_command_base)
+        """
+        Initializes the AsyncPackageManager.
+        
+        Args:
+            python_executable (str, optional): Path to the Python executable.
+            pip_command_base (List[str], optional): Custom pip command base.
+            venv_path (str, optional): Path to a virtual environment.
+        """
+        # Reuse sync init logic to determine command base and create venv if needed
+        sync_pm = PackageManager(python_executable, pip_command_base, venv_path=venv_path)
         self.pip_command_base = sync_pm.pip_command_base
         self.target_python_executable = sync_pm.target_python_executable
         self._sync_pm_instance = sync_pm  # Keep a sync instance for metadata checks
@@ -388,3 +396,34 @@ async def async_get_package_info(package_name: str) -> Optional[str]:
 async def async_check_vulnerabilities(**kwargs: Any) -> Tuple[bool, str]:
     """Checks for vulnerabilities asynchronously."""
     return await _default_async_pm.check_vulnerabilities(**kwargs)
+
+def get_async_pip_manager_for_version(target_python_version: str, venv_path: str) -> AsyncPackageManager:
+    """
+    Creates an AsyncPackageManager that targets a specific portable Python version.
+    
+    See get_pip_manager_for_version for details.
+    
+    Args:
+        target_python_version (str): The Python version to use (e.g., "3.10", "3.12").
+        venv_path (str): The path where the virtual environment should be created.
+        
+    Returns:
+        AsyncPackageManager: An async manager instance for the requested Python environment.
+    """
+    # Use the synchronous factory to do the heavy lifting (downloading python, finding path)
+    # The factory returns a PackageManager
+    try:
+        sync_pm = get_pip_manager_for_version(target_python_version, venv_path)
+    except RuntimeError as e:
+        logger.error(f"Failed to initialize async manager for portable python: {e}")
+        raise
+        
+    # Initialize AsyncPackageManager with the executable found by the sync factory
+    # We don't need to pass venv_path here because sync_pm (internally used) is already
+    # configured, but AsyncPackageManager re-creates a sync_pm instance.
+    # To avoid re-doing work, we pass the executable we found.
+    # PackageManager will re-verify the venv, which is fast.
+    return AsyncPackageManager(
+        python_executable=sync_pm.target_python_executable,
+        venv_path=venv_path
+    )

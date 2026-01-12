@@ -1,7 +1,9 @@
-**********
+************
 User Guide
-**********
+************
+
 ...
+
 .. toctree::
    :maxdepth: 1
 
@@ -14,3 +16,5 @@ User Guide
    async
    dry_run
    uv
+   async_versions
+   cli   <!-- added CLI documentation -->
