@@ -7,6 +7,8 @@
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/ParisNeo/pipmaster/docs.yml?branch=main&label=docs)](https://github.com/ParisNeo/pipmaster/actions/workflows/docs.yml)
 [![GitHub stars](https://img.shields.io/github/stars/ParisNeo/pipmaster.svg?style=social&label=Stars)](https://github.com/ParisNeo/pipmaster)
 [![Documentation Status](https://readthedocs.org/projects/pipmaster/badge/?version=latest)](https://parisneo.github.io/pipmaster/) 
+[![Code Coverage](https://img.shields.io/codecov/c/github/ParisNeo/pipmaster)](https://codecov.io/gh/ParisNeo/pipmaster)
+[![Code Quality](https://img.shields.io/codacy/grade/your-project-id)](https://www.codacy.com/app/your-username/pipmaster)
 
 Stop telling your users to `pip install -r requirements.txt`. Start building professional, self‑sufficient Python applications that **just work**.
 
@@ -18,12 +20,12 @@ Stop telling your users to `pip install -r requirements.txt`. Start building pro
 
 `pipmaster` bridges the gap between development and deployment, solving the classic “it works on my machine” problem.
 
-* **Automate Your Setup:** Your application can configure its own environment on first launch.
-* **Self‑Healing Applications:** Detect missing or outdated packages at runtime and fix them automatically.
-* **Eliminate “Dependency Hell”:** Manage dependencies for non‑technical users with zero manual steps.
-* **Multi‑Environment Management:** Seamlessly work across multiple virtual environments, CI pipelines, or portable Python builds.
-* **Dry‑Run & Verbose Modes:** Preview changes safely before they happen and get crystal‑clear debugging output.
-* **Future‑Proof:** A pluggable architecture for additional backends (`uv`, `conda` planned).
+* **Automate Your Setup**: Your application can configure its own environment on first launch.
+* **Self‑Healing Applications**: Detect missing or outdated packages at runtime and fix them automatically.
+* **Eliminate “Dependency Hell”**: Manage dependencies for non‑technical users with zero manual steps.
+* **Multi‑Environment Management**: Seamlessly work across multiple virtual environments, CI pipelines, or portable Python builds.
+* **Dry‑Run & Verbose Modes**: Preview changes safely before they happen and get crystal‑clear debugging output.
+* **Future‑Proof**: A pluggable architecture for additional backends (`uv`, `conda` planned).
 
 ## Key Use Cases
 
@@ -32,6 +34,44 @@ Stop telling your users to `pip install -r requirements.txt`. Start building pro
 * **Data Science / ML Projects** – Keep notebooks, servers, and containers in sync with exact dependencies.
 * **CI/CD Pipelines** – Prepare clean build environments programmatically.
 * **Libraries & Frameworks** – Provide helper scripts that set up a correct environment for users.
+
+## Quick Start
+
+### Installation
+
+```bash
+pip install pipmaster
+```
+
+### Basic Usage
+
+```python
+import pipmaster as pm
+
+# Ensure a single package is installed
+pm.ensure_packages("rich")
+
+# Ensure multiple packages with version requirements
+pm.ensure_packages(["pandas", "numpy>=1.20"], verbose=True)
+
+# Ensure packages from a requirements.txt file
+pm.ensure_requirements("requirements.txt")
+```
+
+### Advanced Example
+
+```python
+import pipmaster as pm
+
+# Conditional installation based on platform
+required_packages = {
+    "torch": {"index_url": "https://download.pytorch.org/whl/cu121", "specifier": ">=2.0.0"},
+    "transformers": {"specifier": ">=4.30.0"},
+}
+
+# Check and install/update packages
+pm.ensure_packages(required_packages, verbose=True)
+```
 
 ## Feature Overview
 
@@ -46,34 +86,7 @@ Stop telling your users to `pip install -r requirements.txt`. Start building pro
 | Create Virtual Environments                  | N/A            | ✅                         | N/A           |
 | Run Ephemeral Tools (`uvx`)                  | N/A            | ✅                         | N/A           |
 | Dry Run Mode                                 | ✅            | ❌                         | ✅            |
-
-## Installation
-
-```bash
-pip install pipmaster
-```
-
-### Optional Extras
-
-* **Vulnerability Auditing (`pip-audit`):**
-
-  ```bash
-  pip install pipmaster[audit]
-  ```
-
-* **Development Environment (for contributors):**
-
-  ```bash
-  git clone https://github.com/ParisNeo/pipmaster.git
-  cd pipmaster
-  pip install -e .[dev]
-  ```
-
-* **All Extras:**
-
-  ```bash
-  pip install pipmaster[all]
-  ```
+| Portable Python Management                   | ✅            | ❌                         | ✅            |
 
 ## Core Concept: Declarative & Idempotent Management
 
@@ -189,10 +202,51 @@ else:
     print("No known vulnerabilities.")
 ```
 
+## Why Choose `pipmaster`?
+
+### Compared to Manual `pip install`
+
+| Feature | Manual `pip install` | `pipmaster` |
+|---------|----------------------|-------------|
+| Automation | Manual process | Fully automated |
+| Error Handling | User must handle errors | Built-in error handling |
+| Cross-platform | Platform-specific commands | Unified API |
+| Version Management | Manual version checking | Automatic version validation |
+| Environment Isolation | Manual venv management | Built-in venv support |
+
+### Compared to Other Package Managers
+
+| Feature | `pip` | `conda` | `uv` | `pipmaster` |
+|---------|-------|---------|------|-------------|
+| Programmatic API | Limited | Limited | Limited | Full API support |
+| Async Support | No | No | Limited | Full async support |
+| Portable Python | No | No | No | Built-in support |
+| Cross-backend | No | No | No | Supports pip, uv, planned conda |
+
 ## Contributing
 
 Contributions are welcome! Please see the [Contributing guide](docs/contributing.rst) for details on reporting issues, submitting pull requests, and running tests.
 
+### How to Contribute
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## Support
+
+Need help? Join our community:
+
+- **GitHub Discussions**: [Ask questions on GitHub](https://github.com/ParisNeo/pipmaster/discussions)
+
 ## License
 
 This project is licensed under the Apache 2.0 License – see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- Thanks to the Python community for creating such a powerful ecosystem
+- Special thanks to the developers of `pip`, `uv`, and `pip-audit` for their excellent tools
+- Inspired by the need for better package management in production applications
