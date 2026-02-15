@@ -1,0 +1,501 @@
+# pipmaster/core.py
+
+# -*- coding: utf-8 -*-
+"""
+Core Package Manager using pip with enhanced ASCIIColors visual feedback.
+
+Author: ParisNeo
+Created: 01/04/2024
+Last Updated: 13/02/2026
+"""
+
+import subprocess
+import sys
+import os
+import re
+import shlex
+import ascii_colors as logging
+from typing import Optional, List, Tuple, Union, Dict, Any
+from packaging import version as packaging_version
+from packaging.specifiers import SpecifierSet
+
+# Setup logger
+logger = logging.getLogger(__name__)
+
+# Emoji constants for visual feedback
+EMOJI = {
+    "package": "📦",
+    "install": "⬇️",
+    "update": "🔄",
+    "remove": "🗑️",
+    "check": "✅",
+    "cross": "❌",
+    "warning": "⚠️",
+    "info": "ℹ️",
+    "search": "🔍",
+    "gear": "⚙️",
+    "sparkles": "✨",
+    "rocket": "🚀",
+    "clock": "⏱️",
+    "star": "⭐",
+}
+
+
+class PackageManager:
+    """
+    Manages Python package installations and queries using pip.
+    Enhanced with ASCIIColors visual feedback for pleasant UX.
+    """
+    def __init__(
+        self,
+        python_executable: Optional[str] = None,
+        pip_command_base: Optional[List[str]] = None,
+        venv_path: Optional[str] = None,
+    ):
+        self.venv_path = venv_path
+        self.target_python_executable: str = python_executable or sys.executable
+        self.pip_command_base: List[str] = pip_command_base or [sys.executable, "-m", "pip"]
+
+        if self.venv_path:
+            if os.name == 'nt':  # Windows
+                self.target_python_executable = os.path.join(self.venv_path, 'Scripts', 'python.exe')
+            else:  # Unix/Linux/MacOS
+                self.target_python_executable = os.path.join(self.venv_path, 'bin', 'python')
+            self.pip_command_base = [self.target_python_executable, "-m", "pip"]
+
+        logger.info(f"{EMOJI['info']}  PackageManager initialized for: {self.target_python_executable}")
+
+    def _run_command(
+        self, command: List[str], capture_output: bool = False, dry_run: bool = False, verbose: bool = False
+    ) -> Tuple[bool, str]:
+        """
+        Runs a pip command using subprocess with optional visual feedback.
+        """
+        if dry_run:
+            dry_run_msg = f"{EMOJI['info']} Dry run: Would execute: {' '.join(self.pip_command_base + command)}"
+            logger.info(dry_run_msg)
+            return True, f"Dry run: Command would be '{' '.join(command)}'"
+
+        command_to_run = self.pip_command_base + command
+        command_str = " ".join(command_to_run)
+        
+        if verbose:
+            logger.info(f"{EMOJI['gear']} Executing: {command_str}")
+
+        try:
+            stderr_pipe = subprocess.PIPE if capture_output or verbose else subprocess.DEVNULL
+            stdout_pipe = subprocess.PIPE if capture_output else (None if verbose else subprocess.DEVNULL)
+
+            result = subprocess.run(
+                command_to_run,
+                stdout=stdout_pipe,
+                stderr=stderr_pipe,
+                text=True,
+                check=False
+            )
+
+            if result.returncode == 0:
+                msg = f"{EMOJI['check']} Command succeeded"
+                if verbose:
+                    msg += f": {command_str}"
+                logger.info(msg)
+                output = result.stdout if result.stdout is not None else "Command executed successfully."
+                return True, output
+            else:
+                error_message = f"{EMOJI['cross']} Command failed (exit {result.returncode}): {command_str}"
+                stderr_content = result.stderr if result.stderr else "No stderr captured."
+                if capture_output:
+                    error_message += f"\n--- stderr ---\n{stderr_content}"
+                logger.error(error_message)
+                return False, error_message
+
+        except FileNotFoundError:
+            error_msg = f"{EMOJI['cross']} Error: '{self.pip_command_base[0]}' not found. Is it installed and in PATH?"
+            logger.error(error_msg)
+            return False, error_msg
+        except Exception as e:
+            error_msg = f"{EMOJI['cross']} Unexpected error running command: {e}"
+            logger.exception(error_msg)
+            return False, error_msg
+
+    def _check_if_install_is_needed(
+        self, package: str, version_specifier: Optional[str], always_update: bool
+    ) -> Tuple[bool, str, bool]:
+        """
+        Determines if an install/update is needed with visual feedback logging.
+        Returns: (is_needed: bool, install_target: str, force_reinstall: bool)
+        """
+        logger.debug(f"{EMOJI['search']} Checking if install needed for: {package} (spec: {version_specifier}, always_update: {always_update})")
+        
+        is_pkg_installed = self.is_installed(package)
+
+        if not is_pkg_installed:
+            install_target = f"{package}{version_specifier}" if version_specifier else package
+            logger.info(f"{EMOJI['package']} Package '{package}' not found. Installation needed: {install_target}")
+            return True, install_target, False
+
+        if always_update:
+            install_target = f"{package}{version_specifier}" if version_specifier else package
+            logger.info(f"{EMOJI['update']} Always-update enabled. Updating '{package}' to: {install_target}")
+            return True, install_target, False
+
+        if version_specifier:
+            if self.is_version_compatible(package, version_specifier):
+                logger.info(f"{EMOJI['check']} Package '{package}' installed and meets specifier '{version_specifier}'. Skipping.")
+                return False, package, False
+            else:
+                current_ver = self.get_installed_version(package)
+                install_target = f"{package}{version_specifier}"
+                logger.warning(f"{EMOJI['warning']} Package '{package}' v{current_ver} does not meet '{version_specifier}'. Updating to: {install_target}")
+                return True, install_target, False
+        else:
+            logger.info(f"{EMOJI['check']} Package '{package}' already installed (no version check required).")
+            return False, package, False
+
+    def install(
+        self,
+        package: str,
+        index_url: Optional[str] = None,
+        force_reinstall: bool = False,
+        upgrade: bool = True,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """Installs a package with pleasant visual feedback."""
+        command = ["install"]
+        if upgrade:
+            command.append("--upgrade")
+        if force_reinstall:
+            command.append("--force-reinstall")
+        if index_url:
+            command.extend(["--index-url", index_url])
+        if extra_args:
+            command.extend(extra_args)
+        command.append(package)
+
+        action_emoji = EMOJI['update'] if upgrade else EMOJI['install']
+        action_text = "Updating" if upgrade else "Installing"
+        logger.info(f"{action_emoji} {action_text} package: {package}")
+
+        success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+        
+        if success:
+            logger.info(f"{EMOJI['sparkles']} Successfully handled package: {package}")
+        else:
+            logger.error(f"{EMOJI['cross']} Failed to handle package: {package}")
+        
+        return success
+
+    def install_if_missing(
+        self,
+        package: str,
+        version_specifier: Optional[str] = None,
+        always_update: bool = False,
+        index_url: Optional[str] = None,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """Conditionally installs a package with visual status feedback."""
+        is_needed, install_target, force = self._check_if_install_is_needed(package, version_specifier, always_update)
+
+        if not is_needed:
+            return True
+
+        return self.install(
+            install_target,
+            index_url=index_url,
+            upgrade=True,
+            force_reinstall=force,
+            extra_args=extra_args,
+            dry_run=dry_run,
+            verbose=verbose,
+        )
+
+    def _get_packages_to_process(
+        self,
+        requirements: Union[str, Dict[str, Optional[str]], List[str]],
+        always_update: bool = False,
+        verbose: bool = False
+    ) -> List[str]:
+        """Analyzes requirements and returns list of packages needing action."""
+        if isinstance(requirements, str):
+            requirements = {requirements: None}
+        elif isinstance(requirements, list):
+            temp_dict = {}
+            for item in requirements:
+                item = item.strip()
+                if not item:
+                    continue
+                match = re.match(r"^([a-zA-Z0-9_.-]+)\s*(.*)$", item)
+                if match:
+                    pkg_name = match.group(1)
+                    specifier = match.group(2).strip() if match.group(2) else None
+                    temp_dict[pkg_name] = specifier
+                else:
+                    logger.warning(f"{EMOJI['warning']} Invalid requirement format: '{item}'")
+            requirements = temp_dict
+        elif not isinstance(requirements, dict):
+            logger.error(f"{EMOJI['cross']} Invalid requirements type: {type(requirements)}")
+            return []
+
+        packages_to_process = []
+        for pkg_name, specifier in requirements.items():
+            is_needed, install_target, _ = self._check_if_install_is_needed(pkg_name, specifier, always_update)
+            if is_needed:
+                packages_to_process.append(install_target)
+
+        if verbose and not packages_to_process:
+            logger.info(f"{EMOJI['check']} All requirements already satisfied.")
+
+        return packages_to_process
+
+    def ensure_packages(
+        self,
+        requirements: Union[str, Dict[str, Optional[str]], List[str]],
+        index_url: Optional[str] = None,
+        always_update: bool = False,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """
+        Idempotently ensures packages meet requirements with pleasant progress feedback.
+        """
+        packages_to_process = self._get_packages_to_process(requirements, always_update, verbose)
+
+        if not packages_to_process:
+            logger.info(f"{EMOJI['check']} All package requirements satisfied. Nothing to do.")
+            return True
+
+        pkg_list_str = "', '".join(packages_to_process)
+        logger.info(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process: '{pkg_list_str}'")
+
+        return self.install_multiple(
+            packages=packages_to_process,
+            index_url=index_url,
+            force_reinstall=False,
+            upgrade=True,
+            extra_args=extra_args,
+            dry_run=dry_run,
+            verbose=verbose,
+        )
+
+    def ensure_requirements(
+        self,
+        requirements_file: str,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """Ensures packages from requirements.txt with visual feedback."""
+        try:
+            with open(requirements_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except FileNotFoundError:
+            logger.error(f"{EMOJI['cross']} Requirements file not found: {requirements_file}")
+            return False
+
+        requirements_list = []
+        pip_options = []
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            if line.startswith('-'):
+                pip_options.extend(shlex.split(line))
+            else:
+                package_req = line.split('#')[0].strip()
+                if package_req:
+                    requirements_list.append(package_req)
+
+        if not requirements_list and not pip_options:
+            logger.info(f"{EMOJI['info']} No requirements in {requirements_file}")
+            return True
+        
+        logger.info(f"{EMOJI['package']} Processing {len(requirements_list)} requirements from {requirements_file}")
+
+        return self.ensure_packages(
+            requirements=requirements_list,
+            index_url=None,
+            extra_args=pip_options,
+            dry_run=dry_run,
+            verbose=verbose
+        )
+
+    def install_multiple(
+        self,
+        packages: List[str],
+        index_url: Optional[str] = None,
+        force_reinstall: bool = False,
+        upgrade: bool = True,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """Installs multiple packages with batch progress feedback."""
+        if not packages:
+            logger.info(f"{EMOJI['check']} No packages to install.")
+            return True
+
+        batch_size = len(packages)
+        logger.info(f"{EMOJI['rocket']} Installing batch of {batch_size} package(s)...")
+
+        command = ["install"]
+        if upgrade:
+            command.append("--upgrade")
+        if force_reinstall:
+            command.append("--force-reinstall")
+        if index_url:
+            command.extend(["--index-url", index_url])
+        if extra_args:
+            command.extend(extra_args)
+        command.extend(packages)
+
+        success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+        
+        if success:
+            logger.info(f"{EMOJI['sparkles']} Batch installation complete: {batch_size} package(s)")
+        else:
+            logger.error(f"{EMOJI['cross']} Batch installation failed for some packages")
+        
+        return success
+
+    def uninstall(
+        self, package: str, extra_args: Optional[List[str]] = None, dry_run: bool = False, verbose: bool = False
+    ) -> bool:
+        """Uninstalls a package with visual feedback."""
+        logger.info(f"{EMOJI['remove']} Removing package: {package}")
+        
+        command = ["uninstall", "-y", package]
+        if extra_args:
+            command.extend(extra_args)
+        
+        success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+        
+        if success:
+            logger.info(f"{EMOJI['check']} Successfully removed: {package}")
+        else:
+            logger.error(f"{EMOJI['cross']} Failed to remove: {package}")
+        
+        return success
+
+    def uninstall_multiple(
+        self, packages: List[str], extra_args: Optional[List[str]] = None, dry_run: bool = False, verbose: bool = False
+    ) -> bool:
+        """Uninstalls multiple packages with batch feedback."""
+        if not packages:
+            return True
+
+        logger.info(f"{EMOJI['remove']} Removing {len(packages)} package(s)...")
+        
+        command = ["uninstall", "-y"] + packages
+        if extra_args:
+            command.extend(extra_args)
+        
+        success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+        
+        if success:
+            logger.info(f"{EMOJI['check']} Batch removal complete")
+        else:
+            logger.error(f"{EMOJI['cross']} Some packages could not be removed")
+        
+        return success
+
+    def is_installed(self, package_name: str, version_specifier: Optional[str] = None) -> bool:
+        """Checks if package is installed with optional version check."""
+        try:
+            import importlib.metadata
+            dist = importlib.metadata.distribution(package_name)
+            
+            if version_specifier:
+                installed_version_str = dist.version
+                spec = SpecifierSet(version_specifier)
+                is_compatible = installed_version_str in spec
+                if not is_compatible and logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"{EMOJI['warning']} '{package_name}' v{installed_version_str} not compatible with '{version_specifier}'")
+                return is_compatible
+            
+            return True
+            
+        except importlib.metadata.PackageNotFoundError:
+            return False
+
+    def get_installed_version(self, package_name: str) -> Optional[str]:
+        """Gets installed package version."""
+        try:
+            import importlib.metadata
+            return importlib.metadata.version(package_name)
+        except importlib.metadata.PackageNotFoundError:
+            return None
+
+    def is_version_compatible(self, package_name: str, version_specifier: str) -> bool:
+        """Checks if installed version meets specifier."""
+        installed_version = self.get_installed_version(package_name)
+        if installed_version is None:
+            return False
+        
+        try:
+            spec = SpecifierSet(version_specifier)
+            return installed_version in spec
+        except Exception as e:
+            logger.warning(f"{EMOJI['warning']} Invalid version specifier '{version_specifier}': {e}")
+            return False
+
+    def get_package_info(self, package_name: str) -> Optional[str]:
+        """Retrieves package information."""
+        success, output = self._run_command(
+            ["show", package_name], capture_output=True
+        )
+        return output if success else None
+
+    def check_vulnerabilities(
+        self,
+        package_name: Optional[str] = None,
+        requirements_file: Optional[str] = None,
+        extra_args: Optional[List[str]] = None,
+    ) -> Tuple[bool, str]:
+        """Checks for security vulnerabilities with visual feedback."""
+        import shutil
+        
+        pip_audit_exe = shutil.which("pip-audit")
+        if not pip_audit_exe:
+            logger.warning(f"{EMOJI['warning']} pip-audit not found. Install with: pip install pip-audit")
+            return True, "pip-audit not installed"
+
+        command_list = [pip_audit_exe]
+        if requirements_file:
+            command_list.extend(["-r", requirements_file])
+        elif package_name:
+            logger.warning(f"{EMOJI['warning']} Single package scan not supported, scanning all")
+            
+        if extra_args:
+            command_list.extend(extra_args)
+        
+        command_str = " ".join(command_list)
+        logger.info(f"{EMOJI['shield']} Running security scan: {command_str}")
+
+        try:
+            result = subprocess.run(
+                command_list,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+
+            if result.returncode == 0:
+                logger.info(f"{EMOJI['check']} No vulnerabilities found")
+                return False, result.stdout
+            elif result.returncode == 1:
+                logger.warning(f"{EMOJI['warning']} Vulnerabilities detected!")
+                return True, f"Vulnerabilities found:\n{result.stdout}\n{result.stderr}"
+            else:
+                logger.error(f"{EMOJI['cross']} pip-audit failed (code {result.returncode})")
+                return True, f"pip-audit error:\n{result.stderr}"
+                
+        except Exception as e:
+            logger.exception(f"{EMOJI['cross']} Failed to run pip-audit: {e}")
+            return True, f"Error: {e}"

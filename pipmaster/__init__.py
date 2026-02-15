@@ -6,24 +6,41 @@ pipmaster: A versatile Python package manager utility.
 
 Author: ParisNeo
 Created: 01/04/2024
-Last Updated: 24/04/2025
+Last Updated: 13/02/2026
 """
 
 # Read version dynamically
 __version__ = "1.1.0"
 
-# --- Synchronous API ---
-from .package_manager import (
+# --- Core Classes ---
+from .core import (
     PackageManager,
-    PythonVersionManager,          # New native Python version manager
+)
+
+# --- Portable Python Management ---
+from .portable_python import (
+    PythonVersionManager,
+    clear_portable_python_cache,
+)
+
+# --- Alternative Backends ---
+from .backends import (
     UvPackageManager,
     CondaPackageManager,
+)
+
+# --- Factory Functions ---
+from .factories import (
     get_pip_manager,
     get_uv_manager,
     get_conda_manager,
-    get_pip_manager_for_version,   # Factory for portable Python environments
-    remove_venv,                   # New: Remove virtual environment
-    clear_portable_python_cache,   # New: Clear downloaded python versions
+    get_pip_manager_for_version,
+    remove_venv,
+)
+
+# --- Module-Level Convenience Functions ---
+from .convenience import (
+    # Install functions
     install,
     install_if_missing,
     install_edit,
@@ -31,20 +48,25 @@ from .package_manager import (
     install_multiple,
     install_multiple_if_not_installed,
     install_version,
+    # Query functions
     is_installed,
     get_installed_version,
     get_current_package_version,
     is_version_compatible,
     get_package_info,
+    # Update/uninstall functions
     install_or_update,
     uninstall,
     uninstall_multiple,
     install_or_update_multiple,
+    # Security functions
     check_vulnerabilities,
+    # Ensure functions
     ensure_packages,
     ensure_requirements,
-    is_version_higher, # Deprecated
-    is_version_exact,  # Deprecated
+    # Deprecated
+    is_version_higher,
+    is_version_exact,
 )
 
 # --- Asynchronous API ---
@@ -63,17 +85,20 @@ from .async_package_manager import (
 
 # --- Public API Definition (`__all__`) ---
 __all__ = [
-    # Synchronous Classes & Factories
+    # Version
+    "__version__",
+    
+    # Core Classes & Factories
     "PackageManager",
-    "PythonVersionManager",          # Exported new manager
+    "PythonVersionManager",
     "UvPackageManager",
     "CondaPackageManager",
     "get_pip_manager",
     "get_uv_manager",
     "get_conda_manager",
-    "get_pip_manager_for_version",  # Exported new factory
-    "remove_venv",                  # Exported
-    "clear_portable_python_cache",  # Exported
+    "get_pip_manager_for_version",
+    "remove_venv",
+    "clear_portable_python_cache",
 
     # Synchronous Core Functions
     "ensure_packages",
@@ -110,7 +135,4 @@ __all__ = [
     # Deprecated
     "is_version_higher",
     "is_version_exact",
-    
-    # Version
-    "__version__",
 ]

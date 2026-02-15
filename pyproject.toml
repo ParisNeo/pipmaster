@@ -27,7 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "packaging>=21.0",
-    "ascii_colors>=0.8.0"
+    "ascii_colors>=0.11.11"
 ]
 license = "Apache-2.0"
 license-files = ["LICENSE"]

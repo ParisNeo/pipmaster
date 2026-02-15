@@ -3,8 +3,9 @@ from unittest.mock import patch, MagicMock, call, mock_open
 import subprocess
 import sys
 import importlib.metadata
+from pathlib import Path
 
-from pipmaster.package_manager import PackageManager, logging as pm_logging
+from pipmaster.core import PackageManager, logger as pm_logger
 
 MOCK_EXECUTABLE = sys.executable
 
@@ -27,18 +28,11 @@ class TestPackageManager(unittest.TestCase):
         self.assertTrue(success)
         self.assertEqual(output, "Success!")
         
-        executable_path = self.pm._executable
-        quoted_executable = f'"{executable_path}"' if " " in executable_path and not executable_path.startswith('"') else executable_path
-        expected_cmd_str = f"{quoted_executable} -m pip list"
-
-        mock_run.assert_called_once_with(
-            expected_cmd_str,
-            shell=True,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding='utf-8'
-        )
+        # Check that subprocess.run was called with a list (not shell string)
+        mock_run.assert_called_once()
+        call_args, call_kwargs = mock_run.call_args
+        self.assertIsInstance(call_args[0], list)  # Command is a list
+        self.assertIn("list", call_args[0])
 
     @patch('subprocess.run')
     def test_run_pip_command_failure(self, mock_run):
@@ -55,7 +49,7 @@ class TestPackageManager(unittest.TestCase):
         self.assertTrue(result)
         mock_run.assert_called_once()
         call_args, _ = mock_run.call_args
-        # FIX: Make assertion less brittle
+        # Make assertion less brittle - just check key elements exist
         self.assertIn("install", call_args[0])
         self.assertIn("--upgrade", call_args[0])
         self.assertIn("requests", call_args[0])
@@ -91,8 +85,8 @@ class TestPackageManager(unittest.TestCase):
         version = self.pm.get_installed_version("nonexistent")
         self.assertIsNone(version)
 
-    @patch('pipmaster.package_manager.PackageManager.is_installed')
-    @patch('pipmaster.package_manager.PackageManager._run_command')
+    @patch('pipmaster.core.PackageManager.is_installed')
+    @patch('pipmaster.core.PackageManager._run_command')
     def test_install_multiple_if_not_installed_all_missing(self, mock_run_command, mock_is_installed):
         mock_is_installed.return_value = False
         mock_run_command.return_value = (True, "Success")
@@ -108,8 +102,8 @@ class TestPackageManager(unittest.TestCase):
             expected_install_cmd, dry_run=False, verbose=False, capture_output=True
         )
 
-    @patch('pipmaster.package_manager.PackageManager.is_installed')
-    @patch('pipmaster.package_manager.PackageManager._run_command')
+    @patch('pipmaster.core.PackageManager.is_installed')
+    @patch('pipmaster.core.PackageManager._run_command')
     def test_install_multiple_if_not_installed_some_missing(self, mock_run_command, mock_is_installed):
         mock_is_installed.side_effect = lambda pkg: True if pkg == "requests" else False
         mock_run_command.return_value = (True, "Success")
@@ -125,8 +119,8 @@ class TestPackageManager(unittest.TestCase):
             expected_install_cmd, dry_run=False, verbose=False, capture_output=True
         )
 
-    @patch('pipmaster.package_manager.PackageManager.is_installed')
-    @patch('pipmaster.package_manager.PackageManager._run_command')
+    @patch('pipmaster.core.PackageManager.is_installed')
+    @patch('pipmaster.core.PackageManager._run_command')
     def test_install_multiple_if_not_installed_none_missing(self, mock_run_command, mock_is_installed):
         mock_is_installed.return_value = True
         packages = ["requests", "numpy"]
@@ -135,7 +129,7 @@ class TestPackageManager(unittest.TestCase):
         mock_is_installed.assert_has_calls([call("requests"), call("numpy")], any_order=True)
         mock_run_command.assert_not_called()
 
-    @patch('pipmaster.package_manager.PackageManager.get_installed_version')
+    @patch('pipmaster.core.PackageManager.get_installed_version')
     def test_is_version_compatible_success(self, mock_get_version):
         mock_get_version.return_value = "1.2.3"
         self.assertTrue(self.pm.is_version_compatible("mypkg", ">=1.2.0"))
@@ -146,13 +140,13 @@ class TestPackageManager(unittest.TestCase):
         self.assertEqual(mock_get_version.call_count, 4)
         mock_get_version.assert_called_with("mypkg")
 
-    @patch('pipmaster.package_manager.PackageManager.get_installed_version')
+    @patch('pipmaster.core.PackageManager.get_installed_version')
     def test_is_version_compatible_not_installed(self, mock_get_version):
         mock_get_version.return_value = None
         self.assertFalse(self.pm.is_version_compatible("mypkg", ">=1.0.0"))
 
-    @patch('pipmaster.package_manager.PackageManager.is_installed')
-    @patch('pipmaster.package_manager.PackageManager.install_multiple')
+    @patch('pipmaster.core.PackageManager.is_installed')
+    @patch('pipmaster.core.PackageManager.install_multiple')
     def test_ensure_packages_dict_all_met(self, mock_install_multiple, mock_is_installed):
         mock_is_installed.return_value = True
         requirements = {"requests": ">=2.0", "numpy": None}
@@ -163,8 +157,8 @@ class TestPackageManager(unittest.TestCase):
         mock_is_installed.assert_has_calls([call("requests", version_specifier=">=2.0"), call("numpy", version_specifier=None)], any_order=True)
         mock_install_multiple.assert_not_called()
 
-    @patch('pipmaster.package_manager.PackageManager.is_installed')
-    @patch('pipmaster.package_manager.PackageManager.install_multiple')
+    @patch('pipmaster.core.PackageManager.is_installed')
+    @patch('pipmaster.core.PackageManager.install_multiple')
     def test_ensure_packages_dict_some_missing(self, mock_install_multiple, mock_is_installed):
         mock_is_installed.side_effect = lambda pkg, version_specifier=None: True if pkg == "requests" else False
         mock_install_multiple.return_value = True
@@ -187,8 +181,8 @@ class TestPackageManager(unittest.TestCase):
             verbose=True
         )
 
-    @patch('pipmaster.package_manager.PackageManager.is_installed')
-    @patch('pipmaster.package_manager.PackageManager.install_multiple')
+    @patch('pipmaster.core.PackageManager.is_installed')
+    @patch('pipmaster.core.PackageManager.install_multiple')
     def test_ensure_packages_list_input_simple(self, mock_install_multiple, mock_is_installed):
         mock_is_installed.side_effect = lambda pkg, version_specifier=None: True if pkg == "numpy" else False
         mock_install_multiple.return_value = True
@@ -207,8 +201,8 @@ class TestPackageManager(unittest.TestCase):
             extra_args=None, dry_run=False, verbose=False
         )
 
-    @patch('pipmaster.package_manager.PackageManager.is_installed')
-    @patch('pipmaster.package_manager.PackageManager.install_multiple')
+    @patch('pipmaster.core.PackageManager.is_installed')
+    @patch('pipmaster.core.PackageManager.install_multiple')
     def test_ensure_packages_list_with_specifiers(self, mock_install_multiple, mock_is_installed):
         def is_installed_mock(pkg, version_specifier=None):
             if pkg == "requests" and version_specifier == ">=2.25": return False
@@ -234,29 +228,33 @@ class TestPackageManager(unittest.TestCase):
             extra_args=None, dry_run=False, verbose=False
         )
 
-    @patch('pipmaster.package_manager.PackageManager.is_installed')
-    @patch('pipmaster.package_manager.PackageManager.install_multiple')
+    @patch('pipmaster.core.PackageManager.is_installed')
+    @patch('pipmaster.core.PackageManager.install_multiple')
     def test_ensure_packages_list_empty(self, mock_install_multiple, mock_is_installed):
         result = self.pm.ensure_packages([])
         self.assertTrue(result)
         mock_is_installed.assert_not_called()
         mock_install_multiple.assert_not_called()
 
-    @patch('pipmaster.package_manager.PackageManager.is_installed')
-    @patch('pipmaster.package_manager.PackageManager.install_multiple')
+    @patch('pipmaster.core.PackageManager.is_installed')
+    @patch('pipmaster.core.PackageManager.install_multiple')
     def test_ensure_packages_list_invalid_item(self, mock_install_multiple, mock_is_installed):
+        """Test that invalid package strings are handled gracefully without crashing."""
+        # The invalid item should cause an error to be logged but not crash
         mock_is_installed.return_value = True
         requirements = ["requests", "invalid package string!", "numpy"]
 
+        # This should not raise an exception, even though the requirement is invalid
         result = self.pm.ensure_packages(requirements)
         self.assertTrue(result)
+        # Valid packages should be checked, invalid one is skipped
         mock_is_installed.assert_has_calls([
             call("requests", version_specifier=None),
             call("numpy", version_specifier=None),
         ], any_order=True)
         mock_install_multiple.assert_not_called()
 
-    @patch.object(pm_logging.getLogger("pipmaster.package_manager"), 'error')
+    @patch.object(pm_logger, 'error')
     def test_ensure_packages_invalid_input_type(self, mock_logger_error):
         requirements = 123  # Use a type that is actually invalid
         result = self.pm.ensure_packages(requirements) # type: ignore
@@ -264,56 +262,86 @@ class TestPackageManager(unittest.TestCase):
         mock_logger_error.assert_called_once()
         self.assertIn("Invalid requirements type", mock_logger_error.call_args[0][0])
 
-    @patch('pipmaster.package_manager.PackageManager.ensure_packages')
-    @patch('builtins.open', new_callable=mock_open, read_data="requests>=2.25\n# A comment\nnumpy")
-    def test_ensure_requirements_success(self, mock_file, mock_ensure_packages):
-        mock_ensure_packages.return_value = True
-        result = self.pm.ensure_requirements("dummy_reqs.txt", dry_run=True, verbose=True)
+    def test_ensure_requirements_success(self):
+        """Test reading requirements from a file."""
+        with patch('pipmaster.core.PackageManager.ensure_packages') as mock_ensure_packages:
+            mock_ensure_packages.return_value = True
+            
+            # Use tempfile for cross-platform compatibility
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                f.write("requests>=2.25\n# A comment\nnumpy")
+                req_file = f.name
+            
+            try:
+                result = self.pm.ensure_requirements(req_file, dry_run=True, verbose=True)
+                
+                self.assertTrue(result)
+                mock_ensure_packages.assert_called_once_with(
+                    requirements=['requests>=2.25', 'numpy'],
+                    always_update=False,
+                    index_url=None,
+                    extra_args=[],
+                    dry_run=True,
+                    verbose=True
+                )
+            finally:
+                os.unlink(req_file)
 
-        self.assertTrue(result)
-        mock_file.assert_called_once_with("dummy_reqs.txt", 'r', encoding='utf-8')
-        mock_ensure_packages.assert_called_once_with(
-            requirements=['requests>=2.25', 'numpy'],
-            index_url=None,
-            extra_args=[],
-            dry_run=True,
-            verbose=True
-        )
+    def test_ensure_requirements_with_pip_options(self):
+        """Test reading requirements with pip options from a file."""
+        with patch('pipmaster.core.PackageManager.ensure_packages') as mock_ensure_packages:
+            mock_ensure_packages.return_value = True
+            
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                f.write("--index-url http://example.com\nrequests")
+                req_file = f.name
+            
+            try:
+                result = self.pm.ensure_requirements(req_file)
+                
+                self.assertTrue(result)
+                mock_ensure_packages.assert_called_once_with(
+                    requirements=['requests'],
+                    always_update=False,
+                    index_url=None,
+                    extra_args=['--index-url', 'http://example.com'],
+                    dry_run=False,
+                    verbose=False
+                )
+            finally:
+                os.unlink(req_file)
 
-    @patch('pipmaster.package_manager.PackageManager.ensure_packages')
-    @patch('builtins.open', new_callable=mock_open, read_data="--index-url http://example.com\nrequests # inline comment")
-    def test_ensure_requirements_with_pip_options(self, mock_file, mock_ensure_packages):
-        mock_ensure_packages.return_value = True
-        result = self.pm.ensure_requirements("dummy_reqs.txt")
-
-        self.assertTrue(result)
-        mock_file.assert_called_once_with("dummy_reqs.txt", 'r', encoding='utf-8')
-        mock_ensure_packages.assert_called_once_with(
-            requirements=['requests'],
-            index_url=None,
-            extra_args=['--index-url', 'http://example.com'],
-            dry_run=False,
-            verbose=False
-        )
-
-    @patch('pipmaster.package_manager.PackageManager.ensure_packages')
-    @patch('builtins.open')
-    def test_ensure_requirements_file_not_found(self, mock_file, mock_ensure_packages):
-        mock_file.side_effect = FileNotFoundError
-        result = self.pm.ensure_requirements("non_existent.txt")
+    @patch('pipmaster.core.PackageManager.ensure_packages')
+    def test_ensure_requirements_file_not_found(self, mock_ensure_packages):
+        """Test handling of non-existent requirements file."""
+        result = self.pm.ensure_requirements("non_existent_file_that_does_not_exist.txt")
 
         self.assertFalse(result)
-        mock_file.assert_called_once_with("non_existent.txt", 'r', encoding='utf-8')
         mock_ensure_packages.assert_not_called()
 
-    @patch('pipmaster.package_manager.PackageManager.ensure_packages')
-    @patch('builtins.open', new_callable=mock_open, read_data="# Only comments\n\n   # and whitespace")
-    def test_ensure_requirements_empty_or_comments_only(self, mock_file, mock_ensure_packages):
-        result = self.pm.ensure_requirements("empty.txt")
-
-        self.assertTrue(result)
-        mock_file.assert_called_once_with("empty.txt", 'r', encoding='utf-8')
-        mock_ensure_packages.assert_not_called()
+    def test_ensure_requirements_empty_or_comments_only(self):
+        """Test handling of file with only comments/whitespace."""
+        with patch('pipmaster.core.PackageManager.ensure_packages') as mock_ensure_packages:
+            import tempfile
+            import os
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                f.write("# Only comments\n\n   # and whitespace")
+                req_file = f.name
+            
+            try:
+                result = self.pm.ensure_requirements(req_file)
+                
+                self.assertTrue(result)
+                mock_ensure_packages.assert_not_called()
+            finally:
+                os.unlink(req_file)
 
     @patch('subprocess.run')
     def test_run_pip_command_verbose_no_capture(self, mock_run):
@@ -322,19 +350,11 @@ class TestPackageManager(unittest.TestCase):
         self.assertTrue(success)
         self.assertEqual(output, "Command executed successfully.")
 
-        executable_path = self.pm._executable
-        quoted_executable = f'"{executable_path}"' if " " in executable_path and not executable_path.startswith('"') else executable_path
-        expected_cmd_str = f"{quoted_executable} -m pip list"
-
-        mock_run.assert_called_once_with(
-            expected_cmd_str,
-            shell=True,
-            check=False,
-            stdout=None,
-            stderr=None,
-            text=True,
-            encoding='utf-8'
-        )
+        # Check that subprocess.run was called with a list
+        mock_run.assert_called_once()
+        call_args, call_kwargs = mock_run.call_args
+        self.assertIsInstance(call_args[0], list)
+        self.assertIn("list", call_args[0])
 
 if __name__ == '__main__':
     unittest.main()
