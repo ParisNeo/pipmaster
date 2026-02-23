@@ -15,6 +15,7 @@ import asyncio
 import sys
 import importlib.metadata
 import ascii_colors as logging
+from ascii_colors import ASCIIColors
 import shutil
 import shlex
 from typing import Optional, List, Tuple, Union, Dict, Any
@@ -40,7 +41,7 @@ class AsyncPackageManager:
         self.pip_command_base = sync_pm.pip_command_base
         self.target_python_executable = sync_pm.target_python_executable
         self._sync_pm_instance = sync_pm
-        logger.info(f"{EMOJI['info']} [Async] Initialized for: {self.target_python_executable}")
+        logger.debug(f"{EMOJI['info']} [Async] Initialized for: {self.target_python_executable}")
 
     async def _run_command(
         self, command: List[str], capture_output: bool = False, dry_run: bool = False, verbose: bool = False
@@ -81,7 +82,10 @@ class AsyncPackageManager:
                 stderr_str = stderr.decode("utf-8", errors="ignore") if stderr else ""
 
             if process.returncode == 0:
-                logger.info(f"{EMOJI['check']} [Async] Command succeeded")
+                if verbose:
+                    logger.info(f"{EMOJI['check']} [Async] Command succeeded")
+                else:
+                    logger.debug(f"{EMOJI['check']} [Async] Command succeeded")
                 return True, stdout_str or "Command executed successfully."
             else:
                 error_message = f"{EMOJI['cross']} [Async] Command failed (code {process.returncode})"
@@ -119,15 +123,23 @@ class AsyncPackageManager:
 
         action_emoji = EMOJI['update'] if upgrade else EMOJI['install']
         action_text = "Updating" if upgrade else "Installing"
-        logger.info(f"{action_emoji} [Async] {action_text}: {package}")
+        msg = f"{action_emoji} [Async] {action_text}: {package}"
 
-        success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
-        
-        if success:
-            logger.info(f"{EMOJI['sparkles']} [Async] Successfully handled: {package}")
+        if verbose or dry_run:
+            logger.info(msg)
+            success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+            if success:
+                logger.info(f"{EMOJI['sparkles']} [Async] Successfully handled: {package}")
+            else:
+                logger.error(f"{EMOJI['cross']} [Async] Failed to handle: {package}")
         else:
-            logger.error(f"{EMOJI['cross']} [Async] Failed to handle: {package}")
-        
+            with ASCIIColors.status(msg, spinner="dots", spinner_style="bold cyan") as status:
+                success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+                if success:
+                    logger.debug(f"{EMOJI['sparkles']} [Async] Successfully handled: {package}")
+                else:
+                    logger.error(f"{EMOJI['cross']} [Async] Failed to handle: {package}")
+
         return success
 
     async def install_if_missing(
@@ -142,12 +154,22 @@ class AsyncPackageManager:
     ) -> bool:
         """Async conditional install with visual feedback."""
         loop = asyncio.get_running_loop()
+        # We must pass the verbose argument as a keyword argument because run_in_executor
+        # only takes *args. We use functools.partial or lambda, but here we can just
+        # construct the call carefully.
+        # Since _check_if_install_is_needed signature is (package, version_specifier, always_update, verbose)
+        # We can pass them positionally.
         is_needed, install_target, force = await loop.run_in_executor(
-            None, self._sync_pm_instance._check_if_install_is_needed, package, version_specifier, always_update
+            None, 
+            self._sync_pm_instance._check_if_install_is_needed, 
+            package, 
+            version_specifier, 
+            always_update, 
+            verbose
         )
 
         if not is_needed:
-            logger.info(f"{EMOJI['check']} [Async] '{package}' already satisfied. Skipping.")
+            logger.debug(f"{EMOJI['check']} [Async] '{package}' already satisfied. Skipping.")
             return True
 
         return await self.install(
@@ -175,11 +197,14 @@ class AsyncPackageManager:
         )
 
         if not packages_to_process:
-            logger.info(f"{EMOJI['check']} [Async] All requirements satisfied.")
+            logger.debug(f"{EMOJI['check']} [Async] All requirements satisfied.")
             return True
 
         pkg_list_str = "', '".join(packages_to_process)
-        logger.info(f"{EMOJI['package']} [Async] Processing {len(packages_to_process)} packages: '{pkg_list_str}'")
+        if verbose:
+            logger.info(f"{EMOJI['package']} [Async] Processing {len(packages_to_process)} packages: '{pkg_list_str}'")
+        else:
+            logger.debug(f"{EMOJI['package']} [Async] Processing {len(packages_to_process)} packages.")
         
         return await self.install_multiple(
             packages=packages_to_process,
@@ -221,10 +246,11 @@ class AsyncPackageManager:
                     requirements_list.append(package_req)
 
         if not requirements_list and not pip_options:
-            logger.info(f"{EMOJI['info']} [Async] No requirements in {requirements_file}")
+            logger.debug(f"{EMOJI['info']} [Async] No requirements in {requirements_file}")
             return True
         
-        logger.info(f"{EMOJI['package']} [Async] Processing {len(requirements_list)} requirements from {requirements_file}")
+        if verbose:
+            logger.info(f"{EMOJI['package']} [Async] Processing {len(requirements_list)} requirements from {requirements_file}")
 
         return await self.ensure_packages(
             requirements=requirements_list,
@@ -248,7 +274,7 @@ class AsyncPackageManager:
         if not packages: 
             return True
 
-        logger.info(f"{EMOJI['rocket']} [Async] Installing batch of {len(packages)} package(s)...")
+        msg = f"{EMOJI['rocket']} [Async] Installing batch of {len(packages)} package(s)..."
 
         command = ["install"]
         if upgrade: command.append("--upgrade")
@@ -257,31 +283,47 @@ class AsyncPackageManager:
         if extra_args: command.extend(extra_args)
         command.extend(packages)
         
-        success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
-        
-        if success:
-            logger.info(f"{EMOJI['sparkles']} [Async] Batch complete: {len(packages)} package(s)")
+        if verbose or dry_run:
+            logger.info(msg)
+            success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+            if success:
+                logger.info(f"{EMOJI['sparkles']} [Async] Batch complete: {len(packages)} package(s)")
+            else:
+                logger.error(f"{EMOJI['cross']} [Async] Batch failed")
         else:
-            logger.error(f"{EMOJI['cross']} [Async] Batch failed")
-        
+            with ASCIIColors.status(msg, spinner="star", spinner_style="bold green") as status:
+                success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+                if success:
+                    logger.debug(f"{EMOJI['sparkles']} [Async] Batch complete: {len(packages)} package(s)")
+                else:
+                    logger.error(f"{EMOJI['cross']} [Async] Batch failed")
+
         return success
     
     async def uninstall(
         self, package: str, extra_args: Optional[List[str]] = None, dry_run: bool = False, verbose: bool = False
     ) -> bool:
         """Async uninstall with visual feedback."""
-        logger.info(f"{EMOJI['remove']} [Async] Removing: {package}")
+        msg = f"{EMOJI['remove']} [Async] Removing: {package}"
         
         command = ["uninstall", "-y", package]
         if extra_args: command.extend(extra_args)
         
-        success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
-        
-        if success:
-            logger.info(f"{EMOJI['check']} [Async] Successfully removed: {package}")
+        if verbose or dry_run:
+            logger.info(msg)
+            success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+            if success:
+                logger.info(f"{EMOJI['check']} [Async] Successfully removed: {package}")
+            else:
+                logger.error(f"{EMOJI['cross']} [Async] Failed to remove: {package}")
         else:
-            logger.error(f"{EMOJI['cross']} [Async] Failed to remove: {package}")
-        
+            with ASCIIColors.status(msg, spinner="pulse", spinner_style="bold red") as status:
+                success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+                if success:
+                    logger.debug(f"{EMOJI['check']} [Async] Successfully removed: {package}")
+                else:
+                    logger.error(f"{EMOJI['cross']} [Async] Failed to remove: {package}")
+
         return success
 
     async def uninstall_multiple(
@@ -290,12 +332,26 @@ class AsyncPackageManager:
         """Async batch uninstall."""
         if not packages: return True
 
-        logger.info(f"{EMOJI['remove']} [Async] Removing {len(packages)} package(s)...")
+        msg = f"{EMOJI['remove']} [Async] Removing {len(packages)} package(s)..."
         
         command = ["uninstall", "-y"] + packages
         if extra_args: command.extend(extra_args)
         
-        success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+        if verbose or dry_run:
+            logger.info(msg)
+            success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+            if success:
+                logger.info(f"{EMOJI['check']} [Async] Batch removal complete")
+            else:
+                logger.error(f"{EMOJI['cross']} [Async] Some packages could not be removed")
+        else:
+            with ASCIIColors.status(msg, spinner="pulse", spinner_style="bold red") as status:
+                success, _ = await self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+                if success:
+                    logger.debug(f"{EMOJI['check']} [Async] Batch removal complete")
+                else:
+                    logger.error(f"{EMOJI['cross']} [Async] Some packages could not be removed")
+
         return success
 
     async def get_package_info(self, package_name: str) -> Optional[str]:

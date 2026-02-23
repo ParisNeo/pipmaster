@@ -15,6 +15,7 @@ import os
 import re
 import shlex
 import ascii_colors as logging
+from ascii_colors import ASCIIColors
 from typing import Optional, List, Tuple, Union, Dict, Any
 from packaging import version as packaging_version
 from packaging.specifiers import SpecifierSet
@@ -63,7 +64,7 @@ class PackageManager:
                 self.target_python_executable = os.path.join(self.venv_path, 'bin', 'python')
             self.pip_command_base = [self.target_python_executable, "-m", "pip"]
 
-        logger.info(f"{EMOJI['info']}  PackageManager initialized for: {self.target_python_executable}")
+        logger.debug(f"{EMOJI['info']}  PackageManager initialized for: {self.target_python_executable}")
 
     def _run_command(
         self, command: List[str], capture_output: bool = False, dry_run: bool = False, verbose: bool = False
@@ -98,7 +99,9 @@ class PackageManager:
                 msg = f"{EMOJI['check']} Command succeeded"
                 if verbose:
                     msg += f": {command_str}"
-                logger.info(msg)
+                    logger.info(msg)
+                else:
+                    logger.debug(msg)
                 output = result.stdout if result.stdout is not None else "Command executed successfully."
                 return True, output
             else:
@@ -119,37 +122,54 @@ class PackageManager:
             return False, error_msg
 
     def _check_if_install_is_needed(
-        self, package: str, version_specifier: Optional[str], always_update: bool
+        self, package: str, version_specifier: Optional[str], always_update: bool, verbose: bool = False
     ) -> Tuple[bool, str, bool]:
         """
         Determines if an install/update is needed with visual feedback logging.
         Returns: (is_needed: bool, install_target: str, force_reinstall: bool)
         """
+        # Handle case where package name contains specifiers (e.g., "foo>=1.0")
+        # This prevents "Package 'foo>=1.0' not found" errors by splitting name and version
+        if not version_specifier and any(c in package for c in "><=!~"):
+            match = re.match(r"^([a-zA-Z0-9_.-]+)\s*(.*)$", package)
+            if match and match.group(2):
+                package = match.group(1)
+                version_specifier = match.group(2).strip()
+
         logger.debug(f"{EMOJI['search']} Checking if install needed for: {package} (spec: {version_specifier}, always_update: {always_update})")
         
         is_pkg_installed = self.is_installed(package)
 
         if not is_pkg_installed:
             install_target = f"{package}{version_specifier}" if version_specifier else package
-            logger.info(f"{EMOJI['package']} Package '{package}' not found. Installation needed: {install_target}")
+            # Always notify user why we are installing something
+            ASCIIColors.yellow(f"{EMOJI['search']} Package '{package}' not found. Scheduled for installation.")
             return True, install_target, False
 
         if always_update:
             install_target = f"{package}{version_specifier}" if version_specifier else package
-            logger.info(f"{EMOJI['update']} Always-update enabled. Updating '{package}' to: {install_target}")
+            # Always notify user about forced updates
+            ASCIIColors.cyan(f"{EMOJI['update']} Always-update requested for '{package}'. Scheduled for update.")
             return True, install_target, False
 
         if version_specifier:
             if self.is_version_compatible(package, version_specifier):
-                logger.info(f"{EMOJI['check']} Package '{package}' installed and meets specifier '{version_specifier}'. Skipping.")
+                if verbose:
+                    ASCIIColors.green(f"{EMOJI['check']} Package '{package}' is installed and meets specifier '{version_specifier}'. Skipping.")
+                else:
+                    logger.debug(f"{EMOJI['check']} Package '{package}' installed and meets specifier '{version_specifier}'. Skipping.")
                 return False, package, False
             else:
                 current_ver = self.get_installed_version(package)
                 install_target = f"{package}{version_specifier}"
-                logger.warning(f"{EMOJI['warning']} Package '{package}' v{current_ver} does not meet '{version_specifier}'. Updating to: {install_target}")
+                # Always notify user about version mismatches
+                ASCIIColors.red(f"{EMOJI['warning']} Version mismatch for '{package}': Installed v{current_ver} does not meet '{version_specifier}'. Scheduled for update.")
                 return True, install_target, False
         else:
-            logger.info(f"{EMOJI['check']} Package '{package}' already installed (no version check required).")
+            if verbose:
+                ASCIIColors.green(f"{EMOJI['check']} Package '{package}' is already installed. Skipping.")
+            else:
+                logger.debug(f"{EMOJI['check']} Package '{package}' already installed (no version check required).")
             return False, package, False
 
     def install(
@@ -176,15 +196,23 @@ class PackageManager:
 
         action_emoji = EMOJI['update'] if upgrade else EMOJI['install']
         action_text = "Updating" if upgrade else "Installing"
-        logger.info(f"{action_emoji} {action_text} package: {package}")
-
-        success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+        msg = f"{action_emoji} {action_text} package: {package}"
         
-        if success:
-            logger.info(f"{EMOJI['sparkles']} Successfully handled package: {package}")
+        if verbose or dry_run:
+            logger.info(msg)
+            success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+            if success:
+                logger.info(f"{EMOJI['sparkles']} Successfully handled package: {package}")
+            else:
+                logger.error(f"{EMOJI['cross']} Failed to handle package: {package}")
         else:
-            logger.error(f"{EMOJI['cross']} Failed to handle package: {package}")
-        
+            with ASCIIColors.status(msg, spinner="dots", spinner_style="bold cyan") as status:
+                success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+                if success:
+                    logger.debug(f"{EMOJI['sparkles']} Successfully handled package: {package}")
+                else:
+                    logger.error(f"{EMOJI['cross']} Failed to handle package: {package}")
+
         return success
 
     def install_if_missing(
@@ -198,7 +226,7 @@ class PackageManager:
         verbose: bool = False,
     ) -> bool:
         """Conditionally installs a package with visual status feedback."""
-        is_needed, install_target, force = self._check_if_install_is_needed(package, version_specifier, always_update)
+        is_needed, install_target, force = self._check_if_install_is_needed(package, version_specifier, always_update, verbose=verbose)
 
         if not is_needed:
             return True
@@ -242,12 +270,12 @@ class PackageManager:
 
         packages_to_process = []
         for pkg_name, specifier in requirements.items():
-            is_needed, install_target, _ = self._check_if_install_is_needed(pkg_name, specifier, always_update)
+            is_needed, install_target, _ = self._check_if_install_is_needed(pkg_name, specifier, always_update, verbose=verbose)
             if is_needed:
                 packages_to_process.append(install_target)
 
-        if verbose and not packages_to_process:
-            logger.info(f"{EMOJI['check']} All requirements already satisfied.")
+        if not packages_to_process:
+            logger.debug(f"{EMOJI['check']} All requirements already satisfied.")
 
         return packages_to_process
 
@@ -266,11 +294,14 @@ class PackageManager:
         packages_to_process = self._get_packages_to_process(requirements, always_update, verbose)
 
         if not packages_to_process:
-            logger.info(f"{EMOJI['check']} All package requirements satisfied. Nothing to do.")
+            logger.debug(f"{EMOJI['check']} All package requirements satisfied. Nothing to do.")
             return True
 
         pkg_list_str = "', '".join(packages_to_process)
-        logger.info(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process: '{pkg_list_str}'")
+        if verbose:
+            logger.info(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process: '{pkg_list_str}'")
+        else:
+            logger.debug(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process.")
 
         return self.install_multiple(
             packages=packages_to_process,
@@ -312,10 +343,11 @@ class PackageManager:
                     requirements_list.append(package_req)
 
         if not requirements_list and not pip_options:
-            logger.info(f"{EMOJI['info']} No requirements in {requirements_file}")
+            logger.debug(f"{EMOJI['info']} No requirements in {requirements_file}")
             return True
         
-        logger.info(f"{EMOJI['package']} Processing {len(requirements_list)} requirements from {requirements_file}")
+        if verbose:
+            logger.info(f"{EMOJI['package']} Processing {len(requirements_list)} requirements from {requirements_file}")
 
         return self.ensure_packages(
             requirements=requirements_list,
@@ -337,12 +369,12 @@ class PackageManager:
     ) -> bool:
         """Installs multiple packages with batch progress feedback."""
         if not packages:
-            logger.info(f"{EMOJI['check']} No packages to install.")
+            logger.debug(f"{EMOJI['check']} No packages to install.")
             return True
 
         batch_size = len(packages)
-        logger.info(f"{EMOJI['rocket']} Installing batch of {batch_size} package(s)...")
-
+        msg = f"{EMOJI['rocket']} Installing batch of {batch_size} package(s)..."
+        
         command = ["install"]
         if upgrade:
             command.append("--upgrade")
@@ -354,12 +386,20 @@ class PackageManager:
             command.extend(extra_args)
         command.extend(packages)
 
-        success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
-        
-        if success:
-            logger.info(f"{EMOJI['sparkles']} Batch installation complete: {batch_size} package(s)")
+        if verbose or dry_run:
+            logger.info(msg)
+            success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+            if success:
+                logger.info(f"{EMOJI['sparkles']} Batch installation complete: {batch_size} package(s)")
+            else:
+                logger.error(f"{EMOJI['cross']} Batch installation failed for some packages")
         else:
-            logger.error(f"{EMOJI['cross']} Batch installation failed for some packages")
+            with ASCIIColors.status(msg, spinner="star", spinner_style="bold green") as status:
+                success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+                if success:
+                    logger.debug(f"{EMOJI['sparkles']} Batch installation complete: {batch_size} package(s)")
+                else:
+                    logger.error(f"{EMOJI['cross']} Batch installation failed for some packages")
         
         return success
 
@@ -367,18 +407,26 @@ class PackageManager:
         self, package: str, extra_args: Optional[List[str]] = None, dry_run: bool = False, verbose: bool = False
     ) -> bool:
         """Uninstalls a package with visual feedback."""
-        logger.info(f"{EMOJI['remove']} Removing package: {package}")
+        msg = f"{EMOJI['remove']} Removing package: {package}"
         
         command = ["uninstall", "-y", package]
         if extra_args:
             command.extend(extra_args)
         
-        success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
-        
-        if success:
-            logger.info(f"{EMOJI['check']} Successfully removed: {package}")
+        if verbose or dry_run:
+            logger.info(msg)
+            success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+            if success:
+                logger.info(f"{EMOJI['check']} Successfully removed: {package}")
+            else:
+                logger.error(f"{EMOJI['cross']} Failed to remove: {package}")
         else:
-            logger.error(f"{EMOJI['cross']} Failed to remove: {package}")
+            with ASCIIColors.status(msg, spinner="pulse", spinner_style="bold red") as status:
+                success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+                if success:
+                    logger.debug(f"{EMOJI['check']} Successfully removed: {package}")
+                else:
+                    logger.error(f"{EMOJI['cross']} Failed to remove: {package}")
         
         return success
 
@@ -389,18 +437,26 @@ class PackageManager:
         if not packages:
             return True
 
-        logger.info(f"{EMOJI['remove']} Removing {len(packages)} package(s)...")
+        msg = f"{EMOJI['remove']} Removing {len(packages)} package(s)..."
         
         command = ["uninstall", "-y"] + packages
         if extra_args:
             command.extend(extra_args)
         
-        success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
-        
-        if success:
-            logger.info(f"{EMOJI['check']} Batch removal complete")
+        if verbose or dry_run:
+            logger.info(msg)
+            success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+            if success:
+                logger.info(f"{EMOJI['check']} Batch removal complete")
+            else:
+                logger.error(f"{EMOJI['cross']} Some packages could not be removed")
         else:
-            logger.error(f"{EMOJI['cross']} Some packages could not be removed")
+            with ASCIIColors.status(msg, spinner="pulse", spinner_style="bold red") as status:
+                success, _ = self._run_command(command, dry_run=dry_run, verbose=verbose, capture_output=False)
+                if success:
+                    logger.debug(f"{EMOJI['check']} Batch removal complete")
+                else:
+                    logger.error(f"{EMOJI['cross']} Some packages could not be removed")
         
         return success
 
