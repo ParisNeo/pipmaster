@@ -47,12 +47,10 @@ def install(
 
 def install_if_missing(
     package: str,
-    version: Optional[str] = None,
-    enforce_version: bool = False,
+    version_specifier: Optional[str] = None,
     always_update: bool = False,
     index_url: Optional[str] = None,
     extra_args: Optional[List[str]] = None,
-    version_specifier: Optional[str] = None,
     dry_run: bool = False,
     verbose: bool = False,
 ) -> bool:
@@ -61,12 +59,10 @@ def install_if_missing(
     """
     return _default_pm.install_if_missing(
         package=package,
-        version=version,
-        enforce_version=enforce_version,
+        version_specifier=version_specifier,
         always_update=always_update,
         index_url=index_url,
         extra_args=extra_args,
-        version_specifier=version_specifier,
         dry_run=dry_run,
         verbose=verbose,
     )
