@@ -128,6 +128,37 @@ class PackageManager:
         Determines if an install/update is needed with visual feedback logging.
         Returns: (is_needed: bool, install_target: str, force_reinstall: bool)
         """
+        # Handle VCS URLs (git+, hg+, svn+, etc.)
+        # Extract package name from URLs like "git+https://github.com/user/repo.git"
+        vcs_match = re.match(r'^(git\+|hg\+|svn\+|bzr\+)(.+)$', package)
+        if vcs_match:
+            # For VCS URLs, extract the repo name as the package name
+            vcs_url = package
+            # Extract package name from the end of the URL (e.g., "repo.git" -> "repo")
+            url_path = vcs_match.group(2).rstrip('/')
+            # Handle both .git suffix and bare repo names
+            pkg_name_match = re.search(r'/([^/]+?)(?:\.git)?$', url_path)
+            if pkg_name_match:
+                package_name_from_vcs = pkg_name_match.group(1)
+            else:
+                # Fallback: use last path component
+                package_name_from_vcs = url_path.split('/')[-1].replace('.git', '')
+            
+            # Check if package is installed (any version, since VCS URLs don't specify version easily)
+            is_pkg_installed = self.is_installed(package_name_from_vcs)
+            
+            if is_pkg_installed and not always_update:
+                if verbose:
+                    ASCIIColors.green(f"{EMOJI['check']} Package '{package_name_from_vcs}' (from VCS) is already installed. Skipping.")
+                else:
+                    logger.debug(f"{EMOJI['check']} Package '{package_name_from_vcs}' (from VCS) already installed.")
+                return False, package_name_from_vcs, False
+            
+            # Need to install/update
+            action = "update" if is_pkg_installed else "installation"
+            ASCIIColors.yellow(f"{EMOJI['search']} Package '{package_name_from_vcs}' (from VCS) scheduled for {action}.")
+            return True, vcs_url, False
+
         # Handle case where package name contains specifiers (e.g., "foo>=1.0")
         # This prevents "Package 'foo>=1.0' not found" errors by splitting name and version
         if not version_specifier and any(c in package for c in "><=!~"):
