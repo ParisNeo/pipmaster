@@ -7,6 +7,20 @@ All notable changes to this project will be documented in this file.
 The format is based on `Keep a Changelog <https://keepachangelog.com/en/1.0.0/>`_,
 and this project adheres to `Semantic Versioning <https://semver.org/spec/v2.0.0.html>`_.
 
+[1.1.8] - 2026-04-12
+====================
+
+Changed
+-------
+*   **PyPI availability announcement**: Updated documentation to prominently feature PyPI availability. Package is now easily installable via `pip install pipmaster`.
+
+[1.1.6] - 2026-04-12
+====================
+
+Added
+-----
+*   **`progress_callback` parameter**: Added optional `progress_callback` parameter to `ensure_packages` and `async_ensure_packages` methods. This allows frontend applications and UIs to receive real-time updates about package checking and installation progress.
+
 [1.0.9] - 2025-10-25
 ====================
 

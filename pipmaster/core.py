@@ -128,6 +128,12 @@ class PackageManager:
         Determines if an install/update is needed with visual feedback logging.
         Returns: (is_needed: bool, install_target: str, force_reinstall: bool)
         """
+        # Handle "latest" as a special version specifier meaning "get the latest version"
+        if version_specifier == "latest":
+            install_target = package
+            ASCIIColors.cyan(f"{EMOJI['update']} Latest version requested for '{package}'. Scheduled for update.")
+            return True, install_target, False
+
         # Handle VCS URLs (git+, hg+, svn+, etc.)
         # Extract package name from URLs like "git+https://github.com/user/repo.git"
         vcs_match = re.match(r'^(git\+|hg\+|svn\+|bzr\+)(.+)$', package)
@@ -276,7 +282,8 @@ class PackageManager:
         self,
         requirements: Union[str, Dict[str, Optional[str]], List[str]],
         always_update: bool = False,
-        verbose: bool = False
+        verbose: bool = False,
+        progress_callback: Optional[callable] = None,
     ) -> List[str]:
         """Analyzes requirements and returns list of packages needing action."""
         if isinstance(requirements, str):
@@ -300,10 +307,29 @@ class PackageManager:
             return []
 
         packages_to_process = []
-        for pkg_name, specifier in requirements.items():
+        total = len(requirements)
+        for idx, (pkg_name, specifier) in enumerate(requirements.items(), 1):
             is_needed, install_target, _ = self._check_if_install_is_needed(pkg_name, specifier, always_update, verbose=verbose)
             if is_needed:
                 packages_to_process.append(install_target)
+                if progress_callback:
+                    progress_callback({
+                        "status": "checking",
+                        "message": f"Package '{pkg_name}' needs installation",
+                        "package": pkg_name,
+                        "install_target": install_target,
+                        "progress": idx,
+                        "total": total
+                    })
+            else:
+                if progress_callback:
+                    progress_callback({
+                        "status": "checking",
+                        "message": f"Package '{pkg_name}' already satisfied",
+                        "package": pkg_name,
+                        "progress": idx,
+                        "total": total
+                    })
 
         if not packages_to_process:
             logger.debug(f"{EMOJI['check']} All requirements already satisfied.")
@@ -318,14 +344,18 @@ class PackageManager:
         extra_args: Optional[List[str]] = None,
         dry_run: bool = False,
         verbose: bool = False,
+        progress_callback: Optional[callable] = None,
     ) -> bool:
         """
         Idempotently ensures packages meet requirements with pleasant progress feedback.
         """
-        packages_to_process = self._get_packages_to_process(requirements, always_update, verbose)
+        packages_to_process = self._get_packages_to_process(requirements, always_update, verbose, progress_callback)
 
         if not packages_to_process:
-            logger.debug(f"{EMOJI['check']} All package requirements satisfied. Nothing to do.")
+            msg = f"{EMOJI['check']} All package requirements satisfied. Nothing to do."
+            logger.debug(msg)
+            if progress_callback:
+                progress_callback({"status": "complete", "message": msg, "packages": []})
             return True
 
         pkg_list_str = "', '".join(packages_to_process)
@@ -333,8 +363,16 @@ class PackageManager:
             logger.info(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process: '{pkg_list_str}'")
         else:
             logger.debug(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process.")
+        
+        if progress_callback:
+            progress_callback({
+                "status": "processing",
+                "message": f"Installing {len(packages_to_process)} package(s)",
+                "packages": packages_to_process,
+                "count": len(packages_to_process)
+            })
 
-        return self.install_multiple(
+        result = self.install_multiple(
             packages=packages_to_process,
             index_url=index_url,
             force_reinstall=False,
@@ -343,6 +381,16 @@ class PackageManager:
             dry_run=dry_run,
             verbose=verbose,
         )
+        
+        if progress_callback:
+            progress_callback({
+                "status": "complete" if result else "failed",
+                "message": "Installation complete" if result else "Installation failed",
+                "packages": packages_to_process,
+                "success": result
+            })
+        
+        return result
 
     def ensure_requirements(
         self,

@@ -306,6 +306,7 @@ def ensure_packages(
     extra_args: Optional[List[str]] = None,
     dry_run: bool = False,
     verbose: bool = False,
+    progress_callback: Optional[callable] = None,
 ) -> bool:
     """
     Ensures packages meet requirements in the current environment.
@@ -317,6 +318,7 @@ def ensure_packages(
         extra_args=extra_args,
         dry_run=dry_run,
         verbose=verbose,
+        progress_callback=progress_callback,
     )
 
 

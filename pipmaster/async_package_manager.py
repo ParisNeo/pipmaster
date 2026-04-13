@@ -189,15 +189,34 @@ class AsyncPackageManager:
         extra_args: Optional[List[str]] = None,
         dry_run: bool = False,
         verbose: bool = False,
+        progress_callback: Optional[callable] = None,
     ) -> bool:
         """Async ensure with pleasant batch feedback."""
         loop = asyncio.get_running_loop()
+        
+        # Define a wrapper to call async callback from sync context
+        def sync_progress_wrapper(data):
+            if progress_callback and asyncio.iscoroutinefunction(progress_callback):
+                # Schedule the async callback on the event loop
+                try:
+                    loop.call_soon_threadsafe(lambda: asyncio.create_task(progress_callback(data)))
+                except Exception:
+                    pass
+            elif progress_callback:
+                progress_callback(data)
+        
         packages_to_process = await loop.run_in_executor(
-            None, self._sync_pm_instance._get_packages_to_process, requirements, False, verbose
+            None, self._sync_pm_instance._get_packages_to_process, requirements, False, verbose, sync_progress_wrapper
         )
 
         if not packages_to_process:
-            logger.debug(f"{EMOJI['check']} [Async] All requirements satisfied.")
+            msg = f"{EMOJI['check']} [Async] All requirements satisfied."
+            logger.debug(msg)
+            if progress_callback:
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback({"status": "complete", "message": msg, "packages": []})
+                else:
+                    progress_callback({"status": "complete", "message": msg, "packages": []})
             return True
 
         pkg_list_str = "', '".join(packages_to_process)
@@ -206,7 +225,19 @@ class AsyncPackageManager:
         else:
             logger.debug(f"{EMOJI['package']} [Async] Processing {len(packages_to_process)} packages.")
         
-        return await self.install_multiple(
+        if progress_callback:
+            data = {
+                "status": "processing",
+                "message": f"Installing {len(packages_to_process)} package(s)",
+                "packages": packages_to_process,
+                "count": len(packages_to_process)
+            }
+            if asyncio.iscoroutinefunction(progress_callback):
+                await progress_callback(data)
+            else:
+                progress_callback(data)
+
+        result = await self.install_multiple(
             packages=packages_to_process,
             index_url=index_url,
             force_reinstall=False,
@@ -215,6 +246,20 @@ class AsyncPackageManager:
             dry_run=dry_run,
             verbose=verbose,
         )
+        
+        if progress_callback:
+            data = {
+                "status": "complete" if result else "failed",
+                "message": "Installation complete" if result else "Installation failed",
+                "packages": packages_to_process,
+                "success": result
+            }
+            if asyncio.iscoroutinefunction(progress_callback):
+                await progress_callback(data)
+            else:
+                progress_callback(data)
+        
+        return result
 
     async def ensure_requirements(
         self,
@@ -421,9 +466,23 @@ async def async_install_if_missing(package: str, **kwargs: Any) -> bool:
     """Conditionally installs a single package asynchronously."""
     return await _default_async_pm.install_if_missing(package, **kwargs)
 
-async def async_ensure_packages(requirements: Union[str, Dict[str, Optional[str]], List[str]], **kwargs: Any) -> bool:
+async def async_ensure_packages(
+    requirements: Union[str, Dict[str, Optional[str]], List[str]],
+    index_url: Optional[str] = None,
+    extra_args: Optional[List[str]] = None,
+    dry_run: bool = False,
+    verbose: bool = False,
+    progress_callback: Optional[callable] = None,
+) -> bool:
     """Ensures a set of requirements are met asynchronously."""
-    return await _default_async_pm.ensure_packages(requirements, **kwargs)
+    return await _default_async_pm.ensure_packages(
+        requirements=requirements,
+        index_url=index_url,
+        extra_args=extra_args,
+        dry_run=dry_run,
+        verbose=verbose,
+        progress_callback=progress_callback,
+    )
 
 async def async_ensure_requirements(requirements_file: str, **kwargs: Any) -> bool:
     """Ensures requirements from a file are met asynchronously."""

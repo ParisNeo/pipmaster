@@ -10,6 +10,8 @@
 [![Code Coverage](https://img.shields.io/codecov/c/github/ParisNeo/pipmaster)](https://codecov.io/gh/ParisNeo/pipmaster)
 [![Code Quality](https://img.shields.io/codacy/grade/your-project-id)](https://www.codacy.com/app/your-username/pipmaster)
 
+**🎉 Now available on [PyPI](https://pypi.org/project/pipmaster/)! Install with: `pip install pipmaster`**
+
 Stop telling your users to `pip install -r requirements.txt`. Start building professional, self‑sufficient Python applications that **just work**.
 
 `pipmaster` is the ultimate toolkit for declarative and programmatic package management. It provides a robust, unified interface to backends like **`pip`** and **`uv`**, allowing you to automate installations, updates, and environment validation directly from your Python code. With both **synchronous and asynchronous APIs**, it's designed to guarantee that your applications work out‑of‑the‑box by programmatically ensuring all dependencies are correctly installed.
@@ -73,12 +75,58 @@ required_packages = {
 pm.ensure_packages(required_packages, verbose=True)
 ```
 
+### Progress Callbacks
+
+Both `ensure_packages` and `async_ensure_packages` support an optional `progress_callback` parameter for real-time progress updates. This is useful for building progress UIs in frontend applications.
+
+```python
+import pipmaster as pm
+
+def my_progress_callback(data):
+    """
+    Receives progress updates with the following keys:
+    - status: "checking", "processing", "complete", or "failed"
+    - message: Description of current operation
+    - package/packages: Package(s) being processed
+    - progress/total: Progress counters during checking phase
+    - success: Boolean result (in final status)
+    """
+    print(f"[{data['status'].upper()}] {data['message']}")
+    if 'progress' in data:
+        print(f"  Progress: {data['progress']}/{data['total']}")
+
+# Synchronous usage
+pm.ensure_packages(["requests", "numpy", "pandas"], 
+                   progress_callback=my_progress_callback,
+                   verbose=True)
+```
+
+**Async usage with coroutine callback:**
+
+```python
+import pipmaster as pm
+import asyncio
+
+async def my_async_callback(data):
+    print(f"[{data['status'].upper()}] {data['message']}")
+
+async def main():
+    await pm.async_ensure_packages(
+        ["torch", "transformers", "datasets"],
+        progress_callback=my_async_callback,
+        verbose=True
+    )
+
+asyncio.run(main())
+```
+
 ## Feature Overview
 
 | Feature                                      | `pip` Backend | `uv` Backend (Experimental) | Async Support |
 | -------------------------------------------- | :-----------: | :------------------------: | :-----------: |
 | **Ensure Package State (`ensure_packages`)**| ✅            | ❌                         | ✅            |
 | **Ensure from `requirements.txt`**          | ✅            | ❌                         | ✅            |
+| **Progress Callbacks**                       | ✅            | ❌                         | ✅            |
 | Install / Upgrade Packages                   | ✅            | ✅                         | ✅            |
 | Uninstall Packages                           | ✅            | ✅                         | ✅            |
 | Vulnerability Scanning (`pip-audit`)        | ✅            | N/A                        | ✅            |

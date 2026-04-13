@@ -129,3 +129,50 @@ As mentioned, checks like `is_installed`, `get_installed_version`, and `is_versi
 
    # To run:
    # asyncio.run(check_package_non_blocking("numpy"))
+
+Progress Callbacks
+==================
+Both synchronous and asynchronous ``ensure_packages`` methods support an optional ``progress_callback`` parameter. This allows you to receive real-time updates about the package processing status, which is useful for building progress UIs or logging in frontend applications.
+
+The callback receives a dictionary with the following keys:
+
+* ``status``: One of ``"checking"``, ``"processing"``, ``"complete"``, or ``"failed"``
+* ``message``: Human-readable description of the current operation
+* ``package`` or ``packages``: The package(s) being processed
+* ``progress`` / ``total``: Current and total package count during checking phase
+* ``success``: Boolean indicating overall success (only in ``"complete"``/``"failed"`` status)
+
+**Synchronous Example**
+
+.. code-block:: python
+
+   import pipmaster as pm
+
+   def my_callback(data):
+       print(f"[{data['status'].upper()}] {data['message']}")
+       if 'progress' in data:
+           print(f"  Progress: {data['progress']}/{data['total']}")
+
+   pm.ensure_packages(["requests", "numpy", "pandas"], 
+                        progress_callback=my_callback, 
+                        verbose=True)
+
+**Asynchronous Example**
+
+.. code-block:: python
+
+   import pipmaster as pm
+   import asyncio
+
+   async def my_async_callback(data):
+       # Can be async or sync function
+       print(f"[{data['status'].upper()}] {data['message']}")
+
+   async def main():
+       await pm.async_ensure_packages(
+           ["torch", "transformers", "datasets"],
+           progress_callback=my_async_callback,
+           verbose=True
+       )
+
+   asyncio.run(main())
