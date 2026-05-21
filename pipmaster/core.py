@@ -16,6 +16,7 @@ import re
 import shlex
 import ascii_colors as logging
 from ascii_colors import ASCIIColors
+from pathlib import Path
 from typing import Optional, List, Tuple, Union, Dict, Any
 from packaging import version as packaging_version
 from packaging.specifiers import SpecifierSet
@@ -39,6 +40,7 @@ EMOJI = {
     "rocket": "🚀",
     "clock": "⏱️",
     "star": "⭐",
+    "shield": "🛡️",
 }
 
 
@@ -52,12 +54,26 @@ class PackageManager:
         python_executable: Optional[str] = None,
         pip_command_base: Optional[List[str]] = None,
         venv_path: Optional[str] = None,
+        create_if_not_exist: bool = False,
     ):
         self.venv_path = venv_path
         self.target_python_executable: str = python_executable or sys.executable
         self.pip_command_base: List[str] = pip_command_base or [sys.executable, "-m", "pip"]
+        self._version_cache: Dict[str, Optional[str]] = {}
 
         if self.venv_path:
+            venv_path_obj = Path(self.venv_path) / "pyvenv.cfg"
+
+            if not venv_path_obj.exists() and create_if_not_exist:
+                logger.info(f"{EMOJI['gear']} Virtual environment not found at '{self.venv_path}'. Creating it...")
+                try:
+                    import venv
+                    venv.create(self.venv_path, with_pip=True)
+                    logger.info(f"{EMOJI['check']} Virtual environment created at '{self.venv_path}'")
+                except Exception as e:
+                    logger.error(f"{EMOJI['cross']} Failed to create virtual environment at '{self.venv_path}': {e}")
+                    raise RuntimeError(f"Failed to create virtual environment at '{self.venv_path}': {e}") from e
+
             if os.name == 'nt':  # Windows
                 self.target_python_executable = os.path.join(self.venv_path, 'Scripts', 'python.exe')
             else:  # Unix/Linux/MacOS
@@ -65,6 +81,10 @@ class PackageManager:
             self.pip_command_base = [self.target_python_executable, "-m", "pip"]
 
         logger.debug(f"{EMOJI['info']}  PackageManager initialized for: {self.target_python_executable}")
+
+    def _clear_version_cache(self) -> None:
+        """Clears the temporary version cache used to avoid repeated subprocess calls."""
+        self._version_cache.clear()
 
     def _run_command(
         self, command: List[str], capture_output: bool = False, dry_run: bool = False, verbose: bool = False
@@ -87,12 +107,23 @@ class PackageManager:
             stderr_pipe = subprocess.PIPE if capture_output or verbose else subprocess.DEVNULL
             stdout_pipe = subprocess.PIPE if capture_output else (None if verbose else subprocess.DEVNULL)
 
+            # Sanitize environment to prevent VS Code/debugger variables from leaking
+            # into the target venv's pip process, which causes hangs or import errors.
+            clean_env = os.environ.copy()
+            clean_env.pop("PYTHONPATH", None)
+            clean_env.pop("PYTHONHOME", None)
+            # Remove debugger-related environment variables
+            for key in list(clean_env.keys()):
+                if key.startswith(("PYDEVD_", "DEBUGPY_", "IDE_")):
+                    clean_env.pop(key, None)
+
             result = subprocess.run(
                 command_to_run,
                 stdout=stdout_pipe,
                 stderr=stderr_pipe,
                 text=True,
-                check=False
+                check=False,
+                env=clean_env
             )
 
             if result.returncode == 0:
@@ -122,17 +153,62 @@ class PackageManager:
             return False, error_msg
 
     def _check_if_install_is_needed(
-        self, package: str, version_specifier: Optional[str], always_update: bool, verbose: bool = False
+        self, package: str, version_specifier: Optional[str], always_update: bool, verbose: bool = False,
+        _pre_fetched_version: Optional[str] = ...,
+        vcs_url: Optional[str] = None
     ) -> Tuple[bool, str, bool]:
         """
         Determines if an install/update is needed with visual feedback logging.
         Returns: (is_needed: bool, install_target: str, force_reinstall: bool)
+
+        Args:
+            _pre_fetched_version: Optional pre-fetched version from batch check to avoid subprocess overhead.
+            vcs_url: Optional VCS URL for dict-based requirements (e.g., {"vcs": "...", "condition": "..."}).
         """
         # Handle "latest" as a special version specifier meaning "get the latest version"
         if version_specifier == "latest":
             install_target = package
             ASCIIColors.cyan(f"{EMOJI['update']} Latest version requested for '{package}'. Scheduled for update.")
             return True, install_target, False
+
+        # Handle VCS URL from dict-based requirements (e.g., {"vcs": "...", "condition": "..."})
+        if vcs_url:
+            if _pre_fetched_version is not None:
+                is_pkg_installed = _pre_fetched_version is not None
+                installed_version = _pre_fetched_version
+            else:
+                is_pkg_installed = self.is_installed(package)
+                installed_version = self.get_installed_version(package) if is_pkg_installed else None
+
+            if not is_pkg_installed:
+                ASCIIColors.yellow(f"{EMOJI['search']} Package '{package}' not found. Scheduled for VCS installation.")
+                return True, vcs_url, False
+
+            if always_update:
+                ASCIIColors.cyan(f"{EMOJI['update']} Always-update requested for '{package}'. Scheduled for VCS update.")
+                return True, vcs_url, False
+
+            if version_specifier:
+                if installed_version:
+                    try:
+                        spec = SpecifierSet(version_specifier, prereleases=True)
+                        if installed_version in spec:
+                            if verbose:
+                                ASCIIColors.green(f"{EMOJI['check']} Package '{package}' is installed and meets specifier '{version_specifier}'. Skipping.")
+                            else:
+                                logger.debug(f"{EMOJI['check']} Package '{package}' installed and meets specifier '{version_specifier}'. Skipping.")
+                            return False, package, False
+                    except Exception as e:
+                        logger.warning(f"{EMOJI['warning']} Invalid version specifier '{version_specifier}': {e}")
+
+                ASCIIColors.red(f"{EMOJI['warning']} Version mismatch for '{package}': Installed v{installed_version} does not meet '{version_specifier}'. Scheduled for VCS update.")
+                return True, vcs_url, False
+            else:
+                if verbose:
+                    ASCIIColors.green(f"{EMOJI['check']} Package '{package}' is already installed. Skipping.")
+                else:
+                    logger.debug(f"{EMOJI['check']} Package '{package}' already installed (no version check required).")
+                return False, package, False
 
         # Handle VCS URLs (git+, hg+, svn+, etc.)
         # Extract package name from URLs like "git+https://github.com/user/repo.git"
@@ -149,17 +225,17 @@ class PackageManager:
             else:
                 # Fallback: use last path component
                 package_name_from_vcs = url_path.split('/')[-1].replace('.git', '')
-            
+
             # Check if package is installed (any version, since VCS URLs don't specify version easily)
             is_pkg_installed = self.is_installed(package_name_from_vcs)
-            
+
             if is_pkg_installed and not always_update:
                 if verbose:
                     ASCIIColors.green(f"{EMOJI['check']} Package '{package_name_from_vcs}' (from VCS) is already installed. Skipping.")
                 else:
                     logger.debug(f"{EMOJI['check']} Package '{package_name_from_vcs}' (from VCS) already installed.")
                 return False, package_name_from_vcs, False
-            
+
             # Need to install/update
             action = "update" if is_pkg_installed else "installation"
             ASCIIColors.yellow(f"{EMOJI['search']} Package '{package_name_from_vcs}' (from VCS) scheduled for {action}.")
@@ -174,8 +250,15 @@ class PackageManager:
                 version_specifier = match.group(2).strip()
 
         logger.debug(f"{EMOJI['search']} Checking if install needed for: {package} (spec: {version_specifier}, always_update: {always_update})")
-        
-        is_pkg_installed = self.is_installed(package)
+
+        # Use pre-fetched version if available (from batch check), otherwise fall back to is_installed()
+        if _pre_fetched_version is not ...:
+            # _pre_fetched_version is the actual version string, or None if not installed
+            is_pkg_installed = _pre_fetched_version is not None
+            installed_version = _pre_fetched_version
+        else:
+            is_pkg_installed = self.is_installed(package)
+            installed_version = self.get_installed_version(package) if is_pkg_installed else None
 
         if not is_pkg_installed:
             install_target = f"{package}{version_specifier}" if version_specifier else package
@@ -190,18 +273,22 @@ class PackageManager:
             return True, install_target, False
 
         if version_specifier:
-            if self.is_version_compatible(package, version_specifier):
-                if verbose:
-                    ASCIIColors.green(f"{EMOJI['check']} Package '{package}' is installed and meets specifier '{version_specifier}'. Skipping.")
-                else:
-                    logger.debug(f"{EMOJI['check']} Package '{package}' installed and meets specifier '{version_specifier}'. Skipping.")
-                return False, package, False
-            else:
-                current_ver = self.get_installed_version(package)
-                install_target = f"{package}{version_specifier}"
-                # Always notify user about version mismatches
-                ASCIIColors.red(f"{EMOJI['warning']} Version mismatch for '{package}': Installed v{current_ver} does not meet '{version_specifier}'. Scheduled for update.")
-                return True, install_target, False
+            if installed_version:
+                try:
+                    spec = SpecifierSet(version_specifier, prereleases=True)
+                    if installed_version in spec:
+                        if verbose:
+                            ASCIIColors.green(f"{EMOJI['check']} Package '{package}' is installed and meets specifier '{version_specifier}'. Skipping.")
+                        else:
+                            logger.debug(f"{EMOJI['check']} Package '{package}' installed and meets specifier '{version_specifier}'. Skipping.")
+                        return False, package, False
+                except Exception as e:
+                    logger.warning(f"{EMOJI['warning']} Invalid version specifier '{version_specifier}': {e}")
+
+            install_target = f"{package}{version_specifier}"
+            # Always notify user about version mismatches
+            ASCIIColors.red(f"{EMOJI['warning']} Version mismatch for '{package}': Installed v{installed_version} does not meet '{version_specifier}'. Scheduled for update.")
+            return True, install_target, False
         else:
             if verbose:
                 ASCIIColors.green(f"{EMOJI['check']} Package '{package}' is already installed. Skipping.")
@@ -250,6 +337,8 @@ class PackageManager:
                 else:
                     logger.error(f"{EMOJI['cross']} Failed to handle package: {package}")
 
+        if success:
+            self._clear_version_cache()
         return success
 
     def install_if_missing(
@@ -280,7 +369,7 @@ class PackageManager:
 
     def _get_packages_to_process(
         self,
-        requirements: Union[str, Dict[str, Optional[str]], List[str]],
+        requirements: Union[str, Dict[str, Any], List[str]],
         always_update: bool = False,
         verbose: bool = False,
         progress_callback: Optional[callable] = None,
@@ -306,10 +395,26 @@ class PackageManager:
             logger.error(f"{EMOJI['cross']} Invalid requirements type: {type(requirements)}")
             return []
 
+        # Batch check all package versions in a single subprocess call for performance
+        pkg_names = list(requirements.keys())
+        installed_versions = self.get_installed_versions_batch(pkg_names)
+
         packages_to_process = []
         total = len(requirements)
         for idx, (pkg_name, specifier) in enumerate(requirements.items(), 1):
-            is_needed, install_target, _ = self._check_if_install_is_needed(pkg_name, specifier, always_update, verbose=verbose)
+            vcs_url = None
+            actual_specifier = specifier
+
+            # Handle dict-based requirements like {"vcs": "...", "condition": "..."}
+            if isinstance(specifier, dict):
+                vcs_url = specifier.get("vcs")
+                actual_specifier = specifier.get("condition") or specifier.get("version")
+
+            is_needed, install_target, _ = self._check_if_install_is_needed(
+                pkg_name, actual_specifier, always_update, verbose=verbose,
+                _pre_fetched_version=installed_versions.get(pkg_name),
+                vcs_url=vcs_url
+            )
             if is_needed:
                 packages_to_process.append(install_target)
                 if progress_callback:
@@ -338,7 +443,7 @@ class PackageManager:
 
     def ensure_packages(
         self,
-        requirements: Union[str, Dict[str, Optional[str]], List[str]],
+        requirements: Union[str, Dict[str, Any], List[str]],
         index_url: Optional[str] = None,
         always_update: bool = False,
         extra_args: Optional[List[str]] = None,
@@ -349,48 +454,53 @@ class PackageManager:
         """
         Idempotently ensures packages meet requirements with pleasant progress feedback.
         """
-        packages_to_process = self._get_packages_to_process(requirements, always_update, verbose, progress_callback)
+        try:
+            packages_to_process = self._get_packages_to_process(requirements, always_update, verbose, progress_callback)
 
-        if not packages_to_process:
-            msg = f"{EMOJI['check']} All package requirements satisfied. Nothing to do."
-            logger.debug(msg)
+            if not packages_to_process:
+                msg = f"{EMOJI['check']} All package requirements satisfied. Nothing to do."
+                logger.debug(msg)
+                if progress_callback:
+                    progress_callback({"status": "complete", "message": msg, "packages": []})
+                return True
+
+            pkg_list_str = "', '".join(packages_to_process)
+            if verbose:
+                logger.info(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process: '{pkg_list_str}'")
+            else:
+                logger.debug(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process.")
+
             if progress_callback:
-                progress_callback({"status": "complete", "message": msg, "packages": []})
-            return True
+                progress_callback({
+                    "status": "processing",
+                    "message": f"Installing {len(packages_to_process)} package(s)",
+                    "packages": packages_to_process,
+                    "count": len(packages_to_process)
+                })
 
-        pkg_list_str = "', '".join(packages_to_process)
-        if verbose:
-            logger.info(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process: '{pkg_list_str}'")
-        else:
-            logger.debug(f"{EMOJI['package']} Found {len(packages_to_process)} packages to process.")
-        
-        if progress_callback:
-            progress_callback({
-                "status": "processing",
-                "message": f"Installing {len(packages_to_process)} package(s)",
-                "packages": packages_to_process,
-                "count": len(packages_to_process)
-            })
+            result = self.install_multiple(
+                packages=packages_to_process,
+                index_url=index_url,
+                force_reinstall=False,
+                upgrade=True,
+                extra_args=extra_args,
+                dry_run=dry_run,
+                verbose=verbose,
+            )
 
-        result = self.install_multiple(
-            packages=packages_to_process,
-            index_url=index_url,
-            force_reinstall=False,
-            upgrade=True,
-            extra_args=extra_args,
-            dry_run=dry_run,
-            verbose=verbose,
-        )
-        
-        if progress_callback:
-            progress_callback({
-                "status": "complete" if result else "failed",
-                "message": "Installation complete" if result else "Installation failed",
-                "packages": packages_to_process,
-                "success": result
-            })
-        
-        return result
+            if progress_callback:
+                progress_callback({
+                    "status": "complete" if result else "failed",
+                    "message": "Installation complete" if result else "Installation failed",
+                    "packages": packages_to_process,
+                    "success": result
+                })
+
+            return result
+        finally:
+            # Always clear the version cache after ensure_packages completes
+            # to prevent stale data across different ensure_packages calls
+            self._clear_version_cache()
 
     def ensure_requirements(
         self,
@@ -436,6 +546,33 @@ class PackageManager:
             verbose=verbose
         )
 
+    def install_multiple_if_not_installed(
+        self,
+        packages: List[str],
+        index_url: Optional[str] = None,
+        extra_args: Optional[List[str]] = None,
+        dry_run: bool = False,
+        verbose: bool = False,
+    ) -> bool:
+        """Installs multiple packages only if they are not already installed."""
+        packages_to_install = []
+        for package in packages:
+            if not self.is_installed(package):
+                packages_to_install.append(package)
+
+        if not packages_to_install:
+            return True
+
+        return self.install_multiple(
+            packages=packages_to_install,
+            index_url=index_url,
+            force_reinstall=False,
+            upgrade=True,
+            extra_args=extra_args,
+            dry_run=dry_run,
+            verbose=verbose,
+        )
+
     def install_multiple(
         self,
         packages: List[str],
@@ -479,7 +616,9 @@ class PackageManager:
                     logger.debug(f"{EMOJI['sparkles']} Batch installation complete: {batch_size} package(s)")
                 else:
                     logger.error(f"{EMOJI['cross']} Batch installation failed for some packages")
-        
+
+        if success:
+            self._clear_version_cache()
         return success
 
     def uninstall(
@@ -506,7 +645,9 @@ class PackageManager:
                     logger.debug(f"{EMOJI['check']} Successfully removed: {package}")
                 else:
                     logger.error(f"{EMOJI['cross']} Failed to remove: {package}")
-        
+
+        if success:
+            self._clear_version_cache()
         return success
 
     def uninstall_multiple(
@@ -536,44 +677,176 @@ class PackageManager:
                     logger.debug(f"{EMOJI['check']} Batch removal complete")
                 else:
                     logger.error(f"{EMOJI['cross']} Some packages could not be removed")
-        
+
+        if success:
+            self._clear_version_cache()
         return success
 
-    def is_installed(self, package_name: str, version_specifier: Optional[str] = None) -> bool:
-        """Checks if package is installed with optional version check."""
+    def _is_targeting_current_env(self) -> bool:
+        """Returns True if the target Python is the same as the current process."""
         try:
-            import importlib.metadata
-            dist = importlib.metadata.distribution(package_name)
-            
-            if version_specifier:
-                installed_version_str = dist.version
-                spec = SpecifierSet(version_specifier)
-                is_compatible = installed_version_str in spec
-                if not is_compatible and logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"{EMOJI['warning']} '{package_name}' v{installed_version_str} not compatible with '{version_specifier}'")
-                return is_compatible
-            
-            return True
-            
-        except importlib.metadata.PackageNotFoundError:
+            return os.path.samefile(self.target_python_executable, sys.executable)
+        except (OSError, ValueError):
+            # Fallback to string comparison if paths don't exist or can't be compared
+            return self.target_python_executable == sys.executable
+
+    def is_installed(self, package_name: str, version_specifier: Optional[str] = None) -> bool:
+        """Checks if package is installed in the target environment with optional version check."""
+        installed_version = self.get_installed_version(package_name)
+
+        if installed_version is None:
             return False
 
+        if version_specifier:
+            try:
+                spec = SpecifierSet(version_specifier, prereleases=True)
+                is_compatible = installed_version in spec
+                if not is_compatible and logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"{EMOJI['warning']} '{package_name}' v{installed_version} not compatible with '{version_specifier}'")
+                return is_compatible
+            except Exception as e:
+                logger.warning(f"{EMOJI['warning']} Invalid version specifier '{version_specifier}': {e}")
+                return False
+
+        return True
+
     def get_installed_version(self, package_name: str) -> Optional[str]:
-        """Gets installed package version."""
+        """Gets installed package version from the target environment."""
+        # Check cache first to avoid subprocess overhead
+        if package_name in self._version_cache:
+            return self._version_cache[package_name]
+
+        # Fast path: if targeting current environment, use importlib directly (no subprocess overhead)
+        if self._is_targeting_current_env():
+            try:
+                import importlib.metadata
+                version = importlib.metadata.version(package_name)
+                self._version_cache[package_name] = version
+                return version
+            except importlib.metadata.PackageNotFoundError:
+                self._version_cache[package_name] = None
+                return None
+            except Exception as e:
+                logger.debug(f"{EMOJI['warning']} Could not get version for '{package_name}': {e}")
+                self._version_cache[package_name] = None
+                return None
+
+        # Slow path: target is a different environment, use subprocess
+        # Use a script that handles PackageNotFoundError gracefully to avoid
+        # uncaught exceptions in the subprocess (which can trigger debuggers).
+        script = (
+            f"import importlib.metadata, sys\n"
+            f"try:\n"
+            f"    print(importlib.metadata.version('{package_name}'))\n"
+            f"    sys.exit(0)\n"
+            f"except importlib.metadata.PackageNotFoundError:\n"
+            f"    sys.exit(1)\n"
+        )
         try:
-            import importlib.metadata
-            return importlib.metadata.version(package_name)
-        except importlib.metadata.PackageNotFoundError:
+            result = subprocess.run(
+                [self.target_python_executable, "-c", script],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30
+            )
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                if version:
+                    self._version_cache[package_name] = version
+                    return version
+            self._version_cache[package_name] = None
             return None
+        except Exception as e:
+            logger.debug(f"{EMOJI['warning']} Could not get version for '{package_name}' from {self.target_python_executable}: {e}")
+            self._version_cache[package_name] = None
+            return None
+
+    def get_installed_versions_batch(self, package_names: List[str]) -> Dict[str, Optional[str]]:
+        """Gets installed versions for multiple packages in a single subprocess call."""
+        if not package_names:
+            return {}
+
+        # Check cache first for any already-known packages
+        cached_results = {}
+        uncached_names = []
+        for name in package_names:
+            if name in self._version_cache:
+                cached_results[name] = self._version_cache[name]
+            else:
+                uncached_names.append(name)
+
+        if not uncached_names:
+            return cached_results
+
+        # Fast path: if targeting current environment, use importlib directly
+        if self._is_targeting_current_env():
+            import importlib.metadata
+            for name in uncached_names:
+                try:
+                    version = importlib.metadata.version(name)
+                    self._version_cache[name] = version
+                    cached_results[name] = version
+                except importlib.metadata.PackageNotFoundError:
+                    self._version_cache[name] = None
+                    cached_results[name] = None
+                except Exception as e:
+                    logger.debug(f"{EMOJI['warning']} Could not get version for '{name}': {e}")
+                    self._version_cache[name] = None
+                    cached_results[name] = None
+            return cached_results
+
+        # Slow path: target is a different environment, use single subprocess
+        packages_str = ", ".join([f"'{p}'" for p in uncached_names])
+        script = (
+            "import importlib.metadata\n"
+            "import json\n"
+            f"packages = [{packages_str}]\n"
+            "result = {}\n"
+            "for pkg in packages:\n"
+            "    try:\n"
+            "        result[pkg] = importlib.metadata.version(pkg)\n"
+            "    except importlib.metadata.PackageNotFoundError:\n"
+            "        result[pkg] = None\n"
+            "print(json.dumps(result))\n"
+        )
+        try:
+            result = subprocess.run(
+                [self.target_python_executable, "-c", script],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60
+            )
+            if result.returncode == 0:
+                import json
+                batch_results = json.loads(result.stdout.strip())
+                self._version_cache.update(batch_results)
+                batch_results.update(cached_results)
+                return batch_results
+            else:
+                logger.debug(f"{EMOJI['warning']} Batch version check failed: {result.stderr}")
+                for name in uncached_names:
+                    cached_results[name] = self.get_installed_version(name)
+                return cached_results
+        except Exception as e:
+            logger.debug(f"{EMOJI['warning']} Batch version check error: {e}")
+            for name in uncached_names:
+                cached_results[name] = self.get_installed_version(name)
+            return cached_results
+
+    def get_current_package_version(self, package_name: str) -> Optional[str]:
+        """Gets installed package version. Alias for get_installed_version."""
+        return self.get_installed_version(package_name)
 
     def is_version_compatible(self, package_name: str, version_specifier: str) -> bool:
         """Checks if installed version meets specifier."""
         installed_version = self.get_installed_version(package_name)
         if installed_version is None:
             return False
-        
+
         try:
-            spec = SpecifierSet(version_specifier)
+            spec = SpecifierSet(version_specifier, prereleases=True)
             return installed_version in spec
         except Exception as e:
             logger.warning(f"{EMOJI['warning']} Invalid version specifier '{version_specifier}': {e}")

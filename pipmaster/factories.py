@@ -21,58 +21,64 @@ from .backends import UvPackageManager, CondaPackageManager
 _default_pm = None
 
 
-def get_pip_manager(python_executable: Optional[str] = None) -> PackageManager:
+def get_pip_manager(python_executable: Optional[str] = None, venv_path: Optional[str] = None, create_if_not_exist: bool = False) -> PackageManager:
     """
     Gets a PackageManager instance, potentially targeting a specific Python environment.
 
     Args:
         python_executable (str, optional): Path to the Python executable
             of the target environment. Defaults to sys.executable (current env).
+        venv_path (str, optional): Path to a virtual environment to use.
+        create_if_not_exist (bool, optional): If True and venv_path is provided,
+            creates the virtual environment if it doesn't exist. Defaults to False.
 
     Returns:
         PackageManager: An instance configured for the target environment.
     """
     global _default_pm
-    
-    if python_executable:
-        return PackageManager(python_executable=python_executable)
-    
+
+    if python_executable or venv_path:
+        return PackageManager(python_executable=python_executable, venv_path=venv_path, create_if_not_exist=create_if_not_exist)
+
     if _default_pm is None:
         _default_pm = PackageManager()
-    
+
     return _default_pm
 
 
-def get_pip_manager_for_version(target_python_version: str, venv_path: str) -> PackageManager:
+def get_pip_manager_for_version(target_python_version: str, venv_path: str, create_if_not_exist: bool = True) -> PackageManager:
     """
     Creates a PackageManager that targets a specific Python version.
-    
+
     This function checks if the requested portable Python version is available 
     locally. If not, it downloads it using the built-in native downloader.
-    
+
     It then creates or uses a virtual environment at 'venv_path' using that
     specific Python executable.
 
     Args:
         target_python_version (str): The Python version to use (e.g., "3.10", "3.12").
         venv_path (str): The path where the virtual environment should be created.
+        create_if_not_exist (bool, optional): If True, creates the virtual environment
+            if it doesn't exist. Defaults to True since this factory is typically
+            used for environment creation.
 
     Returns:
         PackageManager: A manager instance for the requested Python environment.
-        
+
     Raises:
         RuntimeError: If the Python version cannot be found or installed.
     """
     pvm = PythonVersionManager()
-    
+
     python_exe = pvm.get_executable_path(target_python_version, auto_install=True)
-    
+
     if not python_exe:
         raise RuntimeError(f"Could not find or install portable Python version {target_python_version}.")
-    
+
     logger.info(f"Using portable Python {target_python_version} at: {python_exe}")
-    
-    return PackageManager(python_executable=python_exe, venv_path=venv_path)
+
+    return PackageManager(python_executable=python_exe, venv_path=venv_path, create_if_not_exist=create_if_not_exist)
 
 
 def get_uv_manager(environment_path: Optional[str] = None) -> UvPackageManager:

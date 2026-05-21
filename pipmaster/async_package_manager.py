@@ -36,8 +36,9 @@ class AsyncPackageManager:
         python_executable: Optional[str] = None,
         pip_command_base: Optional[List[str]] = None,
         venv_path: Optional[str] = None,
+        create_if_not_exist: bool = False,
     ):
-        sync_pm = PackageManager(python_executable, pip_command_base, venv_path=venv_path)
+        sync_pm = PackageManager(python_executable, pip_command_base, venv_path=venv_path, create_if_not_exist=create_if_not_exist)
         self.pip_command_base = sync_pm.pip_command_base
         self.target_python_executable = sync_pm.target_python_executable
         self._sync_pm_instance = sync_pm
@@ -184,7 +185,7 @@ class AsyncPackageManager:
 
     async def ensure_packages(
         self,
-        requirements: Union[str, Dict[str, Optional[str]], List[str]],
+        requirements: Union[str, Dict[str, Any], List[str]],
         index_url: Optional[str] = None,
         extra_args: Optional[List[str]] = None,
         dry_run: bool = False,
@@ -508,15 +509,16 @@ async def async_check_vulnerabilities(**kwargs: Any) -> Tuple[bool, str]:
     """Checks for vulnerabilities asynchronously."""
     return await _default_async_pm.check_vulnerabilities(**kwargs)
 
-def get_async_pip_manager_for_version(target_python_version: str, venv_path: str) -> AsyncPackageManager:
+def get_async_pip_manager_for_version(target_python_version: str, venv_path: str, create_if_not_exist: bool = True) -> AsyncPackageManager:
     """Creates an AsyncPackageManager targeting a specific portable Python version."""
     try:
-        sync_pm = get_pip_manager_for_version(target_python_version, venv_path)
+        sync_pm = get_pip_manager_for_version(target_python_version, venv_path, create_if_not_exist=create_if_not_exist)
     except RuntimeError as e:
         logger.error(f"{EMOJI['cross']} Failed to initialize async manager: {e}")
         raise
-        
+
     return AsyncPackageManager(
         python_executable=sync_pm.target_python_executable,
-        venv_path=venv_path
+        venv_path=venv_path,
+        create_if_not_exist=create_if_not_exist
     )

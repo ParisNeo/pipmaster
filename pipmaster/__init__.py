@@ -10,7 +10,7 @@ Last Updated: 13/02/2026
 """
 
 # Read version dynamically
-__version__ = "1.1.8"
+__version__ = "1.1.13"
 
 # --- Core Classes ---
 from .core import (
@@ -40,6 +40,8 @@ from .factories import (
 
 # --- Module-Level Convenience Functions ---
 from .convenience import (
+    # Environment helpers
+    get_pip_manager_with_venv,
     # Install functions
     install,
     install_if_missing,
@@ -97,6 +99,7 @@ __all__ = [
     "get_uv_manager",
     "get_conda_manager",
     "get_pip_manager_for_version",
+    "get_pip_manager_with_venv",
     "remove_venv",
     "clear_portable_python_cache",
 

@@ -20,6 +20,20 @@ from .core import logger
 _default_pm = get_pip_manager()
 
 
+def get_pip_manager_with_venv(venv_path: str, create_if_not_exist: bool = False) -> Any:
+    """
+    Gets a PackageManager instance targeting a specific virtual environment.
+
+    Args:
+        venv_path (str): Path to the virtual environment.
+        create_if_not_exist (bool, optional): If True, creates the venv if missing.
+
+    Returns:
+        PackageManager: An instance configured for the target environment.
+    """
+    return get_pip_manager(venv_path=venv_path, create_if_not_exist=create_if_not_exist)
+
+
 # --- Install Functions ---
 
 def install(
@@ -300,7 +314,7 @@ def check_vulnerabilities(
 # --- Ensure Functions ---
 
 def ensure_packages(
-    requirements: Union[str, Dict[str, Optional[str]], List[str]],
+    requirements: Union[str, Dict[str, Any], List[str]],
     always_update: bool = False,
     index_url: Optional[str] = None,
     extra_args: Optional[List[str]] = None,
