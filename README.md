@@ -10,6 +10,9 @@
 [![Code Coverage](https://img.shields.io/codecov/c/github/ParisNeo/pipmaster)](https://codecov.io/gh/ParisNeo/pipmaster)
 [![Code Quality](https://img.shields.io/codacy/grade/your-project-id)](https://www.codacy.com/app/your-username/pipmaster)
 
+<img width="1024" height="1536" alt="image" src="https://github.com/user-attachments/assets/1d48a7b4-46f5-48fd-904f-cfbdd1ce2323" />
+
+
 **🎉 Now available on [PyPI](https://pypi.org/project/pipmaster/)! Install with: `pip install pipmaster`**
 
 Stop telling your users to `pip install -r requirements.txt`. Start building professional, self‑sufficient Python applications that **just work**.
