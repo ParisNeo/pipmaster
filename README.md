@@ -10,7 +10,8 @@
 [![Code Coverage](https://img.shields.io/codecov/c/github/ParisNeo/pipmaster)](https://codecov.io/gh/ParisNeo/pipmaster)
 [![Code Quality](https://img.shields.io/codacy/grade/your-project-id)](https://www.codacy.com/app/your-username/pipmaster)
 
-<img width="1024" height="1536" alt="image" src="https://github.com/user-attachments/assets/1d48a7b4-46f5-48fd-904f-cfbdd1ce2323" />
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/82aab33c-785c-4539-a5de-a0dc9376b00d" />
+
 
 
 **🎉 Now available on [PyPI](https://pypi.org/project/pipmaster/)! Install with: `pip install pipmaster`**
